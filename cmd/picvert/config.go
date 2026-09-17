@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"picvert/internal/config"
 	"golang.org/x/term"
+	"picvert/internal/config"
 )
 
 // configPath is where the settings are looked for.
