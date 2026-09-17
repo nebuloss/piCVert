@@ -141,10 +141,15 @@ else changes. A layout is a pure function of a document and a theme.
 answers to a different set of facts: it is asynchronous, it is driven by a
 person, and several independent things must react to one change.
 
+It is **TypeScript**, compiled by esbuild — which is itself written in Go, so
+building the interface needs the Go toolchain and nothing else. `tsc` typechecks
+it separately, because esbuild strips types without checking them; that is the
+only step that needs Node, and neither building nor running the service does.
+
 There is **no framework**. A CV editor draws a form from a field tree and shows
 a preview in an iframe; the expensive part is the layout, which happens on the
-server. A diffing library would add a dependency and a build step to save work
-that is not being done.
+server. A diffing library would add a dependency to save work that is not being
+done.
 
 ### Observer — the document is the subject
 
@@ -161,11 +166,18 @@ stole the cursor after every keystroke.
 
 ### Registry and polymorphism — the controls
 
-`editor/controls.js`, a map from field kind to a `Control` subclass. The same
-argument as `layout.Layouter`, for the same reason: a switch on the kind has to
-be repeated — build the control, read it back, make a blank one for a new list
-entry — and a kind with no branch renders as nothing. The clinching case is the
-same too: `text` and `rich` are one control with one flag.
+`editor/controls.ts`, a `Record<FieldKind, ControlClass>` from field kind to a
+`Control` subclass. The same argument as `layout.Layouter`, for the same reason:
+a switch on the kind has to be repeated — build the control, read it back, make
+a blank one for a new list entry — and a kind with no branch renders as nothing.
+The clinching case is the same too: `text` and `rich` are one control with one
+flag.
+
+TypeScript adds two guarantees Go's version gets from its own compiler.
+`abstract render()` makes a subclass that forgets it a compile error, and typing
+the registry as a **total** map over `FieldKind` makes a kind added to the
+vocabulary and not implemented a compile error as well — rather than a field
+that silently fails to appear.
 
 ### Composite — controls contain controls
 
@@ -175,10 +187,18 @@ true rather than aspirational.
 
 ### Facade — `Api` and `HttpClient`
 
-`editor/api.js` over `lib/http.js`. The server reports failure as `{ok:false}`
+`editor/api.ts` over `lib/http.ts`. The server reports failure as `{ok:false}`
 with a 200 on some paths and a 4xx on others; unpicked at each call site, that
 is a call site that forgets the case it does not hit. And no part of the
 interface spells a URL, so a route that moves breaks in one place.
+
+### The typed seam — `model/api.ts`
+
+Every shape the Go service sends has a counterpart there, and that file is the
+only place the two languages have to agree. It is not validation — nothing
+checks a body at runtime — it is a written-down claim, so that a field renamed
+in Go stops compiling at every reader in the interface instead of arriving as
+`undefined` in a blank panel.
 
 ### Deliberately not, here
 

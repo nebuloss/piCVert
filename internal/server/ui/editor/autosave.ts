@@ -1,16 +1,34 @@
-// autosave.js — saving what was typed, without saying so every keystroke.
-//
-// Two problems, and they are not the same one:
-//
-//   COALESCING   a change per letter must not be a request per letter
-//   SERIALISING  two saves in flight can land out of order, and the older one
-//                landing last overwrites the newer — silently, and the person
-//                only finds out when they reload
-//
-// A debounce solves the first and not the second, which is why this queue
-// exists rather than a timer.
+/**
+ * autosave.ts — saving what was typed, without saying so every keystroke.
+ *
+ * Two problems, and they are not the same one:
+ *
+ *   COALESCING   a change per letter must not be a request per letter
+ *   SERIALISING  two saves in flight can land out of order, and the older one
+ *                landing last overwrites the newer — silently, and the person
+ *                only finds out when they reload
+ *
+ * A debounce solves the first and not the second, which is why this queue
+ * exists rather than a timer.
+ */
 
-import { Emitter } from '../lib/emitter.js';
+import { Emitter } from '../lib/emitter.ts';
+import type { Cv, SaveAnswer } from '../model/api.ts';
+import type { CvDocument } from '../model/document.ts';
+
+/** The four states a save can be in, as the indicator shows them. */
+export type SaveState = 'dirty' | 'saving' | 'saved' | 'error';
+
+export interface StateChange {
+  kind: SaveState;
+  text: string;
+}
+
+export interface AutosaveEvents {
+  state: StateChange;
+  saved: SaveAnswer;
+  [key: string]: unknown;
+}
 
 /**
  * Autosave observes the document and writes it back.
@@ -20,40 +38,43 @@ import { Emitter } from '../lib/emitter.js';
  * on — loses whatever was typed while the connection was down, and that is the
  * one thing an editor must not do.
  */
-export class Autosave extends Emitter {
+export class Autosave extends Emitter<AutosaveEvents> {
   #timer = 0;
   #running = false;
   #dirty = false;
+  #onUnload?: (event: BeforeUnloadEvent) => void;
 
-  constructor(doc, save, { delay = 900, retry = 2500 } = {}) {
+  constructor(
+    private readonly doc: CvDocument,
+    private readonly save: (doc: Cv) => Promise<SaveAnswer>,
+    private readonly delay = 900,
+    private readonly retry = 2500,
+  ) {
     super();
-    this.doc = doc;
-    this.save = save;
-    this.delay = delay;
-    this.retry = retry;
-
     // Both kinds of change are saved. The distinction between them is about
     // whether the FORM redraws, which is no business of this.
     doc.on('value', () => this.schedule());
     doc.on('shape', () => this.schedule());
   }
 
-  get pending() { return this.#dirty || this.#running; }
+  get pending(): boolean {
+    return this.#dirty || this.#running;
+  }
 
-  schedule() {
+  schedule(): void {
     this.#dirty = true;
     this.emit('state', { kind: 'dirty', text: 'unsaved' });
     clearTimeout(this.#timer);
-    this.#timer = setTimeout(() => this.run(), this.delay);
+    this.#timer = window.setTimeout(() => void this.run(), this.delay);
   }
 
   /** flush saves now, for leaving the page or switching language. */
-  flush() {
+  flush(): Promise<void> {
     clearTimeout(this.#timer);
     return this.run();
   }
 
-  async run() {
+  async run(): Promise<void> {
     if (this.#running || !this.#dirty) return;
     this.#running = true;
     // Cleared BEFORE the request, not after: a change arriving while this one
@@ -68,10 +89,13 @@ export class Autosave extends Emitter {
       this.emit('state', { kind: 'saved', text: 'saved' });
     } catch (error) {
       this.#dirty = true;
-      this.emit('state', { kind: 'error', text: error.message });
+      this.emit('state', {
+        kind: 'error',
+        text: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       this.#running = false;
-      if (this.#dirty) setTimeout(() => this.run(), this.retry);
+      if (this.#dirty) window.setTimeout(() => void this.run(), this.retry);
     }
   }
 
@@ -83,13 +107,13 @@ export class Autosave extends Emitter {
    * trace. The browser's own dialog is the only thing that can interrupt a
    * navigation.
    */
-  guard() {
-    this.onUnload = (event) => {
+  guard(): this {
+    this.#onUnload = (event: BeforeUnloadEvent): void => {
       if (!this.pending) return;
       event.preventDefault();
       event.returnValue = '';
     };
-    window.addEventListener('beforeunload', this.onUnload);
+    window.addEventListener('beforeunload', this.#onUnload);
     return this;
   }
 
@@ -100,9 +124,9 @@ export class Autosave extends Emitter {
    * nothing left to save, and a guard still in place would warn the person
    * about losing work they just asked to destroy.
    */
-  release() {
+  release(): void {
     clearTimeout(this.#timer);
     this.#dirty = false;
-    if (this.onUnload) window.removeEventListener('beforeunload', this.onUnload);
+    if (this.#onUnload) window.removeEventListener('beforeunload', this.#onUnload);
   }
 }

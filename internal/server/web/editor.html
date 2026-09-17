@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Editing — piCVert</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/assets/editor/editor.css">
+<link rel="stylesheet" href="{{asset "editor.css"}}">
 </head>
 <body data-base="{{.Base}}" data-slug="{{.Slug}}" data-token="{{.Token}}">
 
@@ -34,6 +34,6 @@
   <form method="dialog"><button>Close</button></form>
 </dialog>
 
-<script type="module" src="/assets/editor/app.js"></script>
+<script type="module" src="{{asset "editor.js"}}"></script>
 </body>
 </html>

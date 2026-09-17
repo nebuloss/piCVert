@@ -1,42 +1,50 @@
-// preview.js — the page as it would be, from what has not been saved yet.
-//
-// This is the hot path of the whole service. It runs on every pause in typing,
-// and each run is a complete layout of the CV — which is affordable only
-// because the engine lays out ONCE and both renderings come from that single
-// result. The engine this replaced ran a browser layout and a separate PDF
-// layout here, and they disagreed by about a line.
+/**
+ * preview.ts — the page as it would be, from what has not been saved yet.
+ *
+ * This is the hot path of the whole service. It runs on every pause in typing,
+ * and each run is a complete layout of the CV — which is affordable only
+ * because the engine lays out ONCE and both renderings come from that single
+ * result. The engine this replaced ran a browser layout and a separate PDF
+ * layout here, and they disagreed by about a line.
+ */
 
-import { Debounced } from '../lib/emitter.js';
-import { Fit } from '../model/document.js';
+import { Debounced } from '../lib/emitter.ts';
+import { Fit } from '../model/document.ts';
+import type { CvDocument } from '../model/document.ts';
+import type { Cv, PreviewAnswer } from '../model/api.ts';
 
 export class Preview {
-  constructor(doc, frame, render, { delay = 250 } = {}) {
-    this.doc = doc;
-    this.frame = frame;
-    this.render = render;
-    this.onFit = null;
-    this.onError = null;
+  private readonly task: Debounced;
 
+  onFit?: (fit: Fit) => void;
+  onError?: (error: Error) => void;
+
+  constructor(
+    private readonly doc: CvDocument,
+    private readonly frame: HTMLIFrameElement,
+    private readonly render: (doc: Cv) => Promise<PreviewAnswer>,
+    delay = 250,
+  ) {
     this.task = new Debounced(() => this.draw(), delay);
-    // Only "value": a structural change emits both, and reacting to each would
-    // lay the page out twice for one edit.
     doc.on('value', () => this.task.schedule());
     doc.on('shape', () => this.task.schedule());
   }
 
-  refresh() { return this.task.run(); }
+  refresh(): Promise<void> {
+    return this.task.run();
+  }
 
-  async draw() {
+  private async draw(): Promise<void> {
     try {
       const answer = await this.render(this.doc.raw);
       this.write(answer.html);
       this.onFit?.(new Fit(answer.fit));
     } catch (error) {
       // Shown where the fit is shown, and the LAST GOOD PAGE is left on screen.
-      // Blanking it would mean a momentary invalid document — a half-typed
+      // Blanking it would mean a momentarily invalid document — a half-typed
       // number, an empty required field — replaces the preview with nothing,
       // and the person loses their place while they finish the word.
-      this.onError?.(error);
+      this.onError?.(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -47,8 +55,9 @@ export class Preview {
    * no address: it is what is being typed, and it has not been saved. A preview
    * that had to be saved first would not be a preview.
    */
-  write(html) {
+  private write(html: string): void {
     const inner = this.frame.contentDocument;
+    if (!inner) return;
     inner.open();
     inner.write(html);
     inner.close();
@@ -62,11 +71,9 @@ export class Preview {
  * somebody reading both should not have to work out that they agree.
  */
 export class FitReport {
-  constructor(node) {
-    this.node = node;
-  }
+  constructor(private readonly node: HTMLElement) {}
 
-  show(fit) {
+  show(fit: Fit): void {
     this.node.dataset.ok = fit.ok ? 'true' : 'false';
     this.node.dataset.tight = fit.tight ? 'true' : 'false';
     this.node.textContent = '';
@@ -90,7 +97,7 @@ export class FitReport {
     }
   }
 
-  error(message) {
+  error(message: string): void {
     this.node.dataset.ok = 'false';
     this.node.textContent = message;
   }

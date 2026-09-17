@@ -6,9 +6,12 @@ this was extracted from.
 ## Verified
 
 ```
-gofmt -l .     nothing
-go vet ./...   nothing
-go test ./...  green
+gofmt -l .                 nothing
+go vet ./...               nothing
+go test ./...              green
+tsc --noEmit               green, under strict + noUncheckedIndexedAccess
+go generate ./...          the committed bundle matches its source
+GOOS=… go build            six targets, all of them
 ```
 
 | | |
@@ -142,3 +145,7 @@ Recorded because each cost real time and none is obvious from the code.
    material family renders.
 3. **Self-service**, if this is ever opened to strangers: quota, per-address
    creation limit, challenge.
+4. **Tests for the interface.** It is driven end to end by hand over the
+   debugging protocol — typing, saving, deleting — and that probe is not in the
+   repository. The types catch the shape errors; nothing yet catches a
+   behavioural one automatically.

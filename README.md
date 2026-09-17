@@ -114,6 +114,26 @@ declaration and one PDF operator. A theme that could invent a property would be
 one the engine cannot lay out and one of the emitters cannot draw — which is the
 class of divergence this project exists to remove.
 
+## Building it
+
+```bash
+go build -o picvert ./cmd/picvert        # that is the whole build
+```
+
+The templates, the fonts and the interface are compiled into the binary, so a
+clone plus the Go toolchain is everything. The interface is TypeScript, bundled
+by esbuild — which is written in Go — so no part of building this needs Node.
+
+Node is needed for one thing, and it is not building: `npm run typecheck` runs
+`tsc`, because esbuild strips types without checking them. CI runs it, along
+with a step that rebuilds the committed bundle and fails if it differs from
+what was pushed.
+
+```bash
+go generate ./...     # rebuild the interface after changing internal/server/ui
+npm run typecheck     # and check that it still type-checks
+```
+
 ## Use
 
 ```bash

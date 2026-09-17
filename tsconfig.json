@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    // The imports carry the `.ts` extension, which is what esbuild resolves and
+    // what keeps a source file and its import in step. Without this, every
+    // import would have to name a `.js` that does not exist on disk.
+    "allowImportingTsExtensions": true,
+
+    // Nothing is emitted from here. esbuild does the compiling; tsc's whole job
+    // is to say whether the types hold, because esbuild STRIPS types without
+    // checking them — so every setting below is unenforced unless tsc is run in
+    // its own right.
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // On, and it is the setting that catches the real faults here: the
+    // interface indexes into records that come off the network, and every one
+    // of those lookups can miss.
+    "noUncheckedIndexedAccess": true,
+
+    // The interface runs in a browser and nowhere else. No Node types, so an
+    // accidental `process.env` or `Buffer` does not compile.
+    "types": []
+  },
+  "include": ["internal/server/ui"]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "picvert-ui",
+  "private": true,
+  "type": "module",
+  "description": "Typechecking for piCVert's interface. Building it needs only Go.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "bundle": "go -C tools/bundle run ."
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

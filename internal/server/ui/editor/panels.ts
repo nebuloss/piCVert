@@ -1,31 +1,40 @@
-// panels.js — the blocks of the form that are not fields.
-//
-// Each is a class with a `render()`, exactly like a Control, because that is
-// what the form does with them. They are separate from the controls because
-// they are not derived from the field tree: they are the operations you can
-// perform on a CV rather than the values it holds.
+/**
+ * panels.ts — the blocks of the form that are not fields.
+ *
+ * Each is a `Renderable`, exactly like a Control, because that is what the form
+ * does with them. They are separate from the controls because they are not
+ * derived from the field tree: they are the operations you can perform on a CV
+ * rather than the values it holds.
+ */
 
-import { copy, el } from '../lib/dom.js';
+import { copy, el } from '../lib/dom.ts';
+import type { Api } from './api.ts';
+import type { CvDocument } from '../model/document.ts';
+import type { DeleteAnswer, HistoryEntry, LanguageEntry, Template, TemplateSummary } from '../model/api.ts';
+
+/** Anything the form can put on the page. */
+export interface Renderable {
+  render(): HTMLElement;
+}
 
 /** SectionBar is the move and remove controls above a section's fields. */
-export class SectionBar {
-  constructor(doc, index, total, { onReorder, onRemove }) {
-    this.doc = doc;
-    this.index = index;
-    this.total = total;
-    this.onReorder = onReorder;
-    this.onRemove = onRemove;
-  }
+export class SectionBar implements Renderable {
+  constructor(
+    private readonly index: number,
+    private readonly total: number,
+    private readonly onReorder: (order: number[]) => void,
+    private readonly onRemove: (index: number) => void,
+  ) {}
 
-  render() {
-    const move = (to) => {
+  render(): HTMLElement {
+    const move = (to: number): void => {
       if (to < 0 || to >= this.total) return;
       // Sent as a PERMUTATION rather than as "this one moved there". The server
       // validates a permutation — every position used exactly once — and can
       // therefore refuse an order that would drop or duplicate a section, which
       // an instruction to move one element cannot be checked for.
       const order = [...Array(this.total).keys()];
-      order.splice(to, 0, order.splice(this.index, 1)[0]);
+      order.splice(to, 0, ...order.splice(this.index, 1));
       this.onReorder(order);
     };
     return el('div', { class: 'entry-bar' }, [
@@ -38,15 +47,16 @@ export class SectionBar {
 }
 
 /** AddSection offers the kinds this template can actually draw. */
-export class AddSection {
-  constructor(template, onAdd) {
-    this.template = template;
-    this.onAdd = onAdd;
-  }
+export class AddSection implements Renderable {
+  constructor(
+    private readonly template: Template,
+    private readonly onAdd: (type: string) => void,
+  ) {}
 
-  render() {
-    const select = el('select', {}, (this.template.sections ?? []).map((slot) =>
-      el('option', { value: slot.type, text: slot.label || slot.type })));
+  render(): HTMLElement {
+    const select = el('select', {},
+      this.template.sections.map((slot) =>
+        el('option', { value: slot.type, text: slot.label || slot.type })));
     return el('div', { class: 'row inline' }, [
       select,
       el('button', { type: 'button', text: 'Add', onclick: () => this.onAdd(select.value) }),
@@ -55,26 +65,24 @@ export class AddSection {
 }
 
 /** TemplatePicker switches the layout, and reports a refusal rather than hiding it. */
-export class TemplatePicker {
-  constructor(templates, current, onPick) {
-    this.templates = templates;
-    this.current = current;
-    this.onPick = onPick;
-  }
+export class TemplatePicker implements Renderable {
+  constructor(
+    private readonly templates: TemplateSummary[],
+    private readonly current: string,
+    private readonly onPick: (uuid: string) => Promise<void>,
+  ) {}
 
-  render() {
+  render(): HTMLElement {
     const select = el('select', {
-      onchange: async () => {
-        try {
-          await this.onPick(select.value);
-        } catch (error) {
+      onchange: () => {
+        void this.onPick(select.value).catch((error: unknown) => {
           // Put back, because the switch did NOT happen. A picker showing the
           // template that was refused is a picker lying about what is on the
           // page — and the refusal is deliberate: a layout that cannot draw one
           // of your sections would lose it.
           select.value = this.current;
           throw error;
-        }
+        });
       },
     });
     for (const t of this.templates) {
@@ -95,28 +103,31 @@ export class TemplatePicker {
  * link: the one you can give a recruiter without giving them the ability to
  * rewrite your CV.
  */
-export class SharePanel {
-  constructor(api) {
-    this.api = api;
-  }
+export class SharePanel implements Renderable {
+  constructor(private readonly api: Api) {}
 
-  render() {
-    const field = el('input', { type: 'text', readonly: true, value: 'loading…' });
+  render(): HTMLElement {
+    const field = el('input', { type: 'text', readonly: true });
+    field.value = 'loading…';
+
     const button = el('button', {
       type: 'button', text: 'Copy',
-      onclick: async () => {
+      onclick: () => {
         field.select();
-        const done = await copy(field.value);
-        // The text is selected either way, so the keyboard still works and the
-        // button has not claimed something it did not do.
-        button.textContent = done ? 'Copied' : 'Press Ctrl+C';
-        setTimeout(() => { button.textContent = 'Copy'; }, 1800);
+        void copy(field.value).then((done) => {
+          // The text is selected either way, so the keyboard still works and
+          // the button has not claimed something it did not do.
+          button.textContent = done ? 'Copied' : 'Press Ctrl+C';
+          window.setTimeout(() => { button.textContent = 'Copy'; }, 1800);
+        });
       },
     });
 
     this.api.links()
       .then((answer) => { field.value = answer.read; })
-      .catch((error) => { field.value = error.message; });
+      .catch((error: unknown) => {
+        field.value = error instanceof Error ? error.message : String(error);
+      });
 
     return el('div', {}, [
       el('div', { class: 'row' }, [
@@ -140,37 +151,38 @@ export class SharePanel {
  * the smallest gesture that cannot be made by accident.
  *
  * AND THE GRACE PERIOD IS STATED, because that is the reassuring half of the
- * sentence. Someone who knows this is reversible for a day does not have to be
- * certain before clicking, and someone who does not know it may never click at
+ * sentence. Somebody who knows this is reversible for a day does not have to be
+ * certain before clicking, and somebody who does not know it may never click at
  * all and keep a CV they wanted gone.
  */
-export class DeletePanel {
-  constructor(doc, api, onDeleted) {
-    this.doc = doc;
-    this.api = api;
-    this.onDeleted = onDeleted;
-  }
+export class DeletePanel implements Renderable {
+  constructor(
+    private readonly doc: CvDocument,
+    private readonly api: Api,
+    private readonly onDeleted: (answer: DeleteAnswer) => void,
+    private readonly onError: (error: unknown) => void,
+  ) {}
 
-  render() {
+  render(): HTMLElement {
     const expected = this.doc.name;
     const button = el('button', {
       type: 'button', class: 'danger', text: 'Delete this CV', disabled: true,
-      onclick: async () => {
+      onclick: () => {
         button.disabled = true;
-        try {
-          const answer = await this.api.remove();
-          this.onDeleted(answer);
-        } catch (error) {
-          button.disabled = false;
-          throw error;
-        }
+        this.api.remove()
+          .then((answer) => this.onDeleted(answer))
+          .catch((error: unknown) => {
+            button.disabled = false;
+            this.onError(error);
+          });
       },
     });
     const field = el('input', {
       type: 'text',
       placeholder: expected || 'the name on this CV',
-      oninput: (event) => {
-        button.disabled = event.target.value.trim() !== expected || !expected;
+      oninput: (event: Event) => {
+        const typed = (event.target as HTMLInputElement).value.trim();
+        button.disabled = typed !== expected || !expected;
       },
     });
 
@@ -189,14 +201,17 @@ export class DeletePanel {
 
 /** LanguageBar switches between a CV's languages and adds one. */
 export class LanguageBar {
-  constructor(select, addButton, { onSwitch, onAdd }) {
-    this.select = select;
-    this.addButton = addButton;
+  constructor(
+    private readonly select: HTMLSelectElement,
+    addButton: HTMLButtonElement,
+    onSwitch: (lang: string) => void,
+    onAdd: () => void,
+  ) {
     select.addEventListener('change', () => onSwitch(select.value));
     addButton.addEventListener('click', () => onAdd());
   }
 
-  show(languages, current) {
+  show(languages: LanguageEntry[], current: string): void {
     this.select.textContent = '';
     for (const entry of languages) {
       const option = el('option', {
@@ -218,16 +233,16 @@ export class LanguageBar {
  *
  * One line per EPISODE of editing, which is what the server stores: a paragraph
  * rewritten over two minutes is one act, and eighty lines of "Summary → Summar
- * → Summa" would bury the change someone is actually looking for.
+ * → Summa" would bury the change somebody is actually looking for.
  */
 export class HistoryPanel {
-  constructor(dialog, body, api) {
-    this.dialog = dialog;
-    this.body = body;
-    this.api = api;
-  }
+  constructor(
+    private readonly dialog: HTMLDialogElement,
+    private readonly body: HTMLElement,
+    private readonly api: Api,
+  ) {}
 
-  async open() {
+  async open(): Promise<void> {
     this.body.textContent = 'loading…';
     this.dialog.showModal();
     try {
@@ -237,33 +252,33 @@ export class HistoryPanel {
         this.body.appendChild(el('p', { text: 'Nothing recorded yet.' }));
         return;
       }
-      for (const entry of answer.entries) this.body.appendChild(this.line(entry));
+      for (const entry of answer.entries) this.body.appendChild(line(entry));
     } catch (error) {
-      this.body.textContent = error.message;
+      this.body.textContent = error instanceof Error ? error.message : String(error);
     }
-  }
-
-  line(entry) {
-    const trail = (entry.trail ?? [])
-      .map((crumb) => crumb.label + (crumb.n ? ` #${crumb.n}` : ''))
-      .join(' › ');
-    const shown = (value) =>
-      value === null || value === undefined || value === '' ? '(nothing)' : String(value);
-
-    return el('div', { class: 'entryline' }, [
-      el('div', { class: 'trail', text: `${when(entry.at)} — ${trail}` }),
-      entry.kind === 'move'
-        ? el('div', { text: `moved from position ${entry.before} to ${entry.after}` })
-        : el('div', {}, [
-            el('del', { text: shown(entry.before) }),
-            ' → ',
-            el('ins', { text: shown(entry.after) }),
-          ]),
-    ]);
   }
 }
 
-function when(stamp) {
+function line(entry: HistoryEntry): HTMLElement {
+  const trail = entry.trail
+    .map((crumb) => crumb.label + (crumb.n ? ` #${crumb.n}` : ''))
+    .join(' › ');
+  const shown = (value: HistoryEntry['before']): string =>
+    value === null || value === undefined || value === '' ? '(nothing)' : String(value);
+
+  return el('div', { class: 'entryline' }, [
+    el('div', { class: 'trail', text: `${when(entry.at)} — ${trail}` }),
+    entry.kind === 'move'
+      ? el('div', { text: `moved from position ${String(entry.before)} to ${String(entry.after)}` })
+      : el('div', {}, [
+          el('del', { text: shown(entry.before) }),
+          ' → ',
+          el('ins', { text: shown(entry.after) }),
+        ]),
+  ]);
+}
+
+function when(stamp: string): string {
   const date = new Date(stamp);
   return Number.isNaN(date.valueOf()) ? stamp : date.toLocaleString();
 }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Name}} — CV</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/assets/viewer/viewer.css">
+<link rel="stylesheet" href="{{asset "viewer.css"}}">
 </head>
 <body data-base="{{.Base}}" data-lang="{{.Lang}}">
 
@@ -21,6 +21,6 @@
 <!-- The languages travel as JSON in a script tag rather than as attributes:
      one value, parsed once, and nothing to escape by hand. -->
 <script type="application/json" id="languages">{{.Languages}}</script>
-<script type="module" src="/assets/viewer/viewer.js"></script>
+<script type="module" src="{{asset "viewer.js"}}"></script>
 </body>
 </html>
