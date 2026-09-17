@@ -472,3 +472,70 @@ func (t *Template) FontDecls() []layout.FontDecl {
 	}
 	return out
 }
+
+// ColumnFor is where a newly added section of this type goes.
+func (t *Template) ColumnFor(kind string) string {
+	for _, s := range t.Sections {
+		if s.Type == kind {
+			return s.Column
+		}
+	}
+	if len(t.Columns) > 0 {
+		return t.Columns[0]
+	}
+	return "left"
+}
+
+// Adapt moves a document's sections into the regions a template lays out.
+//
+// A layout with one column and a layout with two do not agree on where anything
+// goes, and a section left pointing at a region that does not exist would
+// simply not be drawn. So sections are moved to where the target template says
+// their kind belongs — and the result is CHECKED, so a template that cannot
+// draw one of them refuses the switch instead of silently losing it.
+func (r *Registry) Adapt(doc document.Doc, t *Template) (document.Doc, error) {
+	out := make(document.Doc, len(doc))
+	for k, v := range doc {
+		out[k] = v
+	}
+
+	content, _ := document.Obj(doc, "content")
+	nextContent := make(map[string]any, len(content))
+	for k, v := range content {
+		nextContent[k] = v
+	}
+	sections := document.Sections(doc)
+	next := make([]any, 0, len(sections))
+	for _, raw := range sections {
+		s, ok := document.AsObject(raw)
+		if !ok {
+			next = append(next, raw)
+			continue
+		}
+		if known(document.Str(s, "column"), t.Columns) {
+			next = append(next, s)
+			continue
+		}
+		moved := make(map[string]any, len(s))
+		for k, v := range s {
+			moved[k] = v
+		}
+		moved["column"] = t.ColumnFor(document.Str(s, "type"))
+		next = append(next, moved)
+	}
+	nextContent["sections"] = next
+	out["content"] = nextContent
+
+	meta := make(map[string]any, len(document.Meta(doc))+1)
+	for k, v := range document.Meta(doc) {
+		meta[k] = v
+	}
+	meta["template"] = t.UUID
+	delete(meta, "theme")
+	out["meta"] = meta
+
+	if err := r.Check(out, t); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

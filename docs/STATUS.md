@@ -18,6 +18,7 @@ go test ./...  green
 | Text in the PDF | selectable and searchable, 3 265 chars extracted against 3 279 |
 | Conformance kit | both templates, and it fails when a template is broken on purpose |
 | Mobile | scales to fit, no horizontal scroll, no dead space below the page |
+| The service | driven over HTTP by `internal/server`: publication rule, link scope, read-only links, validation, unknown properties, preview, journal, trash, link rotation |
 
 The machine this was written on has neither `go` nor `node`; everything is
 verified on a build host over SSH.
@@ -34,13 +35,26 @@ verified on a build host over SSH.
   as data. `repeat`, `when`, `{field}`, `styleBy`, `widthFrom`, and nothing else.
 - **`internal/templates`** — discovery, validation, and the conformance kit.
 - **`internal/document`, `validate`, `fields`** — the document contract.
-- **`cmd/picvert`** — `render`, `pdf`, `fit`, `preview`.
+- **`internal/engine`** — the pipeline, start to finish, assembled in ONE place so
+  what `fit` measures is what `render` draws and what `serve` sends.
+- **`internal/profiles`, `store`, `tokens`, `access`, `security`, `diff`** — the
+  service's data layer: where CVs live, the single door every write goes
+  through, the two stable links per CV, the publication rule, the headers and
+  the per-address throttle, and the document comparison the journal is built on.
+- **`internal/server`** — the public port (viewer, private links, editor, API)
+  and the admin port. Its browser assets are embedded in the binary.
+- **`cmd/picvert`** — `render`, `pdf`, `fit`, `preview`, `serve`.
 
 ## Not yet
 
-**The service around the engine.** Profiles, storage, private links, the editor,
-the HTTP surface: none of that is here. This repository is the rendering engine,
-and `picvert preview` is a way to look at it, not a server.
+**Importing and exporting a CV as a file.** The PDF carries its own `cv.json`,
+but nothing yet reads it back out, and there is no bundle format for a CV plus
+its portrait.
+
+**Anything self-service.** There is no route that creates a CV: profiles are
+directories someone puts there. A public service taking new CVs from strangers
+needs a quota, a rate limit per address and a challenge, and none of that is
+written.
 
 **Arcs in SVG icon paths.** The translator handles move, line, cubic and close —
 what a material icon is made of. An icon set using `A` would draw nothing rather
@@ -52,6 +66,10 @@ SVG — the shipped example's is — gets a PDF with no portrait. PNG and JPEG w
 
 ## Deliberate differences
 
+1. **Nothing is built ahead of time.** The engine this came from wrote
+   `build/<slug>/cv.html` on every save and served that. A page drawn on request
+   cannot be stale, and there is no build to roll back when one fails — the
+   rendering is cached against the document's own timestamp instead.
 1. **Templates are directories, compositions are data.** The engine this came
    from shipped two renderers per template, in two languages, describing one
    design twice. They drifted, and the drift is what cut CVs off the page. One
@@ -99,6 +117,12 @@ Recorded because each cost real time and none is obvious from the code.
 - **`canvas.measureText` does not load fonts.** A reference measured that way is
   measured in a fallback and looks perfectly self-consistent. And headless Chrome
   quantises advances to whole pixels without `--font-render-hinting=none`.
+- **A renderer that reads a map is a renderer that cannot be compared to
+  itself.** A style asking for a font weight nobody shipped was resolved by
+  whichever face the map happened to yield first, and Go randomises that
+  deliberately. The same CV then laid out to a different page from one run to
+  the next — and the fit search, which lays a page out ten times, turned the
+  wobble into visibly different spacing. Every fallback order is now fixed.
 - **Ask before inventing.** Two rounds were spent adding, then removing,
   ornament that was never in the design. Reading the original stylesheet — which
   should have come first — then turned up a dozen real differences in one pass.
@@ -109,6 +133,5 @@ Recorded because each cost real time and none is obvious from the code.
    checked-in raster rather than against my reading of a screenshot.
 2. **Arc support** in the SVG path translator, so an icon set outside the
    material family renders.
-3. **The browser type bridge**, if this engine is ever put back under the
-   TypeScript editor: `internal/fields` and the editor's `fields.ts` would then
-   be two copies with nothing holding them together.
+3. **Self-service**, if this is ever opened to strangers: quota, per-address
+   creation limit, challenge.

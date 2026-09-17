@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>piCVert</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  :root { --ink: #1b1b1f; --dim: #5d5d66; --line: #e2e2e8; --bg: #f5f4f2; --accent: #2f6b4f; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center; padding: 48px 20px;
+  }
+  main { max-width: 640px; width: 100%; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  p.lede { color: var(--dim); margin: 0 0 32px; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { border-top: 1px solid var(--line); }
+  li a {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 14px 4px; text-decoration: none; color: inherit;
+  }
+  li a:hover { color: var(--accent); }
+  li span { color: var(--dim); font-size: 14px; }
+  .empty { border-top: 1px solid var(--line); padding: 24px 4px; color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>piCVert</h1>
+  <p class="lede">A CV engine that lays the page out once.</p>
+  <ul>
+    {{range .Profiles}}
+    <li><a href="/p/{{.Slug}}/">{{.Name}}<span>/p/{{.Slug}}/</span></a></li>
+    {{else}}
+    <p class="empty">
+      Nothing is published here. Every CV on this service is reached through its
+      own private link, which is the default and is meant to stay that way.
+    </p>
+    {{end}}
+  </ul>
+</main>
+</body>
+</html>

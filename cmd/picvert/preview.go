@@ -10,9 +10,10 @@ import (
 	"strings"
 
 	"picvert/internal/favicon"
+	"picvert/internal/profiles"
 )
 
-// previewCmd serves a profile, rebuilt on every request.
+// previewCmd serves one profile, laid out again on every request.
 //
 // Rebuilt rather than cached, deliberately: this exists to look at a CV while
 // changing the theme it is drawn with, and a preview that has to be restarted
@@ -35,16 +36,14 @@ func previewCmd(args []string) error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		lang := r.URL.Query().Get("lang")
-		p, err := build(*profileDir, lang)
+		e, page, err := prepare(*profileDir, r.URL.Query().Get("lang"))
 		if err != nil {
 			// Shown rather than logged: whoever is looking at this page is the
 			// person who can fix the theme that broke it.
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		root, _ := home()
-		page, err := Document(p, root, documentTitle(*profileDir, lang))
+		html, err := e.HTML(page)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -53,19 +52,21 @@ func previewCmd(args []string) error {
 		// A preview that answers from cache is a preview showing the last
 		// theme, not this one.
 		w.Header().Set("Cache-Control", "no-store, must-revalidate")
-		_, _ = w.Write([]byte(page))
+		_, _ = w.Write([]byte(html))
 	})
 
 	// The PDF, from the same layout the page above is drawn from — which is
 	// what makes looking at both worth anything.
 	mux.HandleFunc("GET /cv.pdf", func(w http.ResponseWriter, r *http.Request) {
 		lang := r.URL.Query().Get("lang")
-		p, err := build(*profileDir, lang)
+		e, page, err := prepare(*profileDir, lang)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		data, err := renderPDF(p, *profileDir, lang)
+		name := profiles.DocName(lang)
+		source, _ := os.ReadFile(filepath.Join(*profileDir, name))
+		data, err := e.PDF(page, name, source)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -83,18 +84,18 @@ func previewCmd(args []string) error {
 	})
 
 	mux.HandleFunc("GET /fit", func(w http.ResponseWriter, r *http.Request) {
-		p, err := build(*profileDir, r.URL.Query().Get("lang"))
+		_, page, err := prepare(*profileDir, r.URL.Query().Get("lang"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintln(w, fitSummary(p))
-		margins := p.Render.Margins(p.Template.Columns)
-		for _, name := range p.Template.Columns {
+		fmt.Fprintln(w, page.Summary())
+		margins := page.Margins()
+		for _, name := range page.Template.Columns {
 			fmt.Fprintf(w, "  %-6s %+8.1f px left\n", name, margins[name])
 		}
-		if over := p.Render.Overflow(); len(over) > 0 {
+		if over := page.Overflow(); len(over) > 0 {
 			fmt.Fprintf(w, "  shorten: %s\n", strings.Join(over, ", "))
 		}
 	})
@@ -111,12 +112,12 @@ func previewCmd(args []string) error {
 	// the same CV in different templates are indistinguishable from their URLs,
 	// and half an hour went into a rendering fault that was a tab pointed at
 	// the wrong port.
-	if p, err := build(*profileDir, ""); err == nil {
-		log.Printf("piCVert preview on http://%s  —  template: %s", *addr, p.Template.Title)
+	if _, page, err := prepare(*profileDir, ""); err == nil {
+		log.Printf("piCVert preview on http://%s  —  template: %s", *addr, page.Template.Title)
 	} else {
 		log.Printf("piCVert preview on http://%s", *addr)
 	}
-	log.Printf("  /         the page          (rebuilt on every reload)")
+	log.Printf("  /         the page          (laid out on every reload)")
 	log.Printf("  /cv.pdf   the PDF, from the same layout")
 	log.Printf("  /fit      does it hold on one page")
 	return http.ListenAndServe(*addr, mux)

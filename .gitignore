@@ -7,6 +7,12 @@
 *.pdf
 *.png
 
+# ...except the interface, which is SOURCE that happens to be HTML. Without
+# this exception a fresh clone builds a binary with nothing embedded in it, and
+# the failure looks like a broken editor rather than a missing file.
+!internal/server/web/*.html
+!internal/server/web/**/*.html
+
 # Real CVs. A profile carries a name, an address and an employer; the engine's
 # default is that none of that is in the repository.
 /data/

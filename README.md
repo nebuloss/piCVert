@@ -123,23 +123,87 @@ go build -o picvert ./cmd/picvert
 ./picvert render  --profile examples/jean-dupont --out cv.html
 ./picvert pdf     --profile examples/jean-dupont --out cv.pdf
 ./picvert preview --profile examples/jean-dupont        # / and /cv.pdf
+./picvert serve                                          # the whole service
 ```
 
 ```
 $ ./picvert fit --profile examples/jean-dupont
-fits on one page
-  left     +121.1 px left
-  right      +5.9 px left
+fits — spacing 140%
+  left     +146.7 px left
+  right    +220.5 px left
 ```
 
 When it does not fit, it names what to shorten rather than quoting a number you
 cannot act on:
 
 ```
-DOES NOT FIT
+DOES NOT FIT, even set as tightly as this engine will go
   right      -8.0 px left
   shorten: projets-techniques
 ```
+
+## The engine chooses the spacing
+
+A design drawn at one fixed rhythm meets a single page in only two ways: it runs
+over, and you are told to cut a sentence, or it stops short, and the page ends in
+a band of white that says the document ran out rather than that it finished.
+Both hand the design's problem to whoever wrote the text.
+
+So the engine searches for the spacing that brings each column to the foot of the
+page — opening the gaps up on a short CV as readily as closing them on a long
+one. Each column is set separately, because one rhythm cannot fill two columns
+holding different amounts of text, and that is exactly what leaves a page ragged
+along the bottom.
+
+What gives, and in what order: gaps, margins and padding first, always; type size
+only when spacing alone cannot bring the page home, because a CV set at 92 % looks
+like a CV that was shrunk and everyone recognises it. Line pitch moves only with
+the type. Fixed proportions — the portrait, the dots, the gauges, the corner radii
+— are never scaled at all, since that is what makes a page look squashed rather
+than merely close-set. And a page cannot "fit" by running its lines into one
+another: touching text disqualifies a setting outright.
+
+The setting is reported, never hidden. A CV that only holds at the floor is a CV
+that is too long, and its author is owed that fact even though the page in front
+of them looks fine.
+
+## A service, not just a renderer
+
+```
+./picvert serve
+  :3000  the CVs, and the private links
+  :3001  administration
+```
+
+Nothing is readable at a guessable address unless it is named in
+`PICVERT_PUBLIC`. Everything else is reached through one of **two stable links
+per CV** — one that views, one that also edits — and there is no account and no
+password anywhere: on a public service, a password-protected surface would be the
+only thing here actually worth attacking.
+
+The editor generates its forms from the same field tree the validator walks and
+the journal names fields by, so adding a field to the vocabulary adds it to the
+interface with no interface code changing. It previews the **unsaved** document
+on every pause in typing, which is the hot path of the whole service and the
+reason the layout is one pass rather than two.
+
+The journal keeps **one entry per episode of editing, not per save**: a paragraph
+rewritten over two minutes is one act, and recording it as eighty lines of
+"Summary → Summar → Summa…" would bury the one change you are looking for. A field
+typed into and put back as it was leaves nothing behind at all.
+
+Deleting is one click by whoever holds the link, and what it destroys exists
+nowhere else — no account to recover it from, no copy on a server. So it is not
+destroyed: the CV is set aside for a grace period, and the admin port can put it
+back exactly as it was.
+
+The administration port has **no access control by design**. Its protection is
+topological — it is not proxied outwards — and it must stay that way, for the
+same reason there is no password on the public side.
+
+Nothing is built ahead of time. `cv.json` is the source of truth and the page is
+drawn from it on request, so the class of fault where a CV is edited and the
+world keeps reading the previous one does not exist here.
 
 ## The PDF carries its own source
 
@@ -192,7 +256,8 @@ than a line.
 
 Working: the layout engine, text measurement and breaking, both painters, the
 embedded source, themes-as-data, the template registry, validation, the
-conformance kit, and mobile scaling.
+conformance kit, mobile scaling, per-column spacing, and the service around it —
+viewer, private links, editor, journal, administration.
 
 Known gaps and deliberate differences: [`docs/STATUS.md`](docs/STATUS.md).
 

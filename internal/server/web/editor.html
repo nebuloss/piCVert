@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editing — piCVert</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/editor/editor.css">
+</head>
+<body data-base="{{.Base}}" data-slug="{{.Slug}}" data-token="{{.Token}}">
+
+<header id="bar">
+  <strong>piCVert</strong>
+  <span id="state" class="state">loading…</span>
+  <span class="spacer"></span>
+  <select id="lang" aria-label="Language"></select>
+  <button id="add-lang" title="Add a language">+ lang</button>
+  <button id="history-open">History</button>
+  <a class="button" href="{{.Base}}/cv.pdf" target="_blank" rel="noopener">PDF</a>
+  <a class="button" href="{{.Base}}/" target="_blank" rel="noopener">View</a>
+</header>
+
+<main>
+  <section id="form" aria-label="The CV's fields"></section>
+  <section id="preview">
+    <div id="fit" class="fit"></div>
+    <div id="stage"><div id="scaler"><iframe id="page" title="Preview"></iframe></div></div>
+  </section>
+</main>
+
+<dialog id="history">
+  <h2>History</h2>
+  <div id="history-body"></div>
+  <form method="dialog"><button>Close</button></form>
+</dialog>
+
+<script type="module" src="/assets/editor/app.js"></script>
+</body>
+</html>
