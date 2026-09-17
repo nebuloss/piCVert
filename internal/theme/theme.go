@@ -91,10 +91,15 @@ type RawStyle struct {
 	Width        any     `json:"width,omitempty"`
 	Height       any     `json:"height,omitempty"`
 	Grow         float64 `json:"grow,omitempty"`
-	Gap          float64 `json:"gap,omitempty"`
-	CrossGap     float64 `json:"crossGap,omitempty"`
-	Padding      string  `json:"padding,omitempty"` // "v h" | "t r b l" | "all"
-	Margin       string  `json:"margin,omitempty"`
+	// Absolute takes a node out of the flow, at left/top from its parent's
+	// content corner. What ornament needs, and nothing else here uses.
+	Absolute bool    `json:"absolute,omitempty"`
+	Left     float64 `json:"left,omitempty"`
+	Top      float64 `json:"top,omitempty"`
+	Gap      float64 `json:"gap,omitempty"`
+	CrossGap float64 `json:"crossGap,omitempty"`
+	Padding  string  `json:"padding,omitempty"` // "v h" | "t r b l" | "all"
+	Margin   string  `json:"margin,omitempty"`
 
 	Align   string `json:"align,omitempty"`   // start | center | end | baseline | stretch
 	Justify string `json:"justify,omitempty"` // start | between
@@ -119,6 +124,8 @@ type RawStyle struct {
 	LineHeight float64 `json:"lineHeight,omitempty"`
 	Letter     float64 `json:"letter,omitempty"`
 	Uppercase  bool    `json:"uppercase,omitempty"`
+	BoldColour string  `json:"boldColour,omitempty"`
+	BoldWeight int     `json:"boldWeight,omitempty"`
 }
 
 // Element is one node of a composition.
@@ -300,6 +307,15 @@ func (t *Theme) Resolve(r RawStyle) (layout.Style, error) {
 	if r.Grow != 0 {
 		s.Grow = r.Grow
 	}
+	if r.Absolute {
+		s.Absolute = true
+	}
+	if r.Left != 0 {
+		s.Left = r.Left
+	}
+	if r.Top != 0 {
+		s.Top = r.Top
+	}
 	if r.Gap != 0 {
 		s.Gap = r.Gap
 	}
@@ -425,6 +441,16 @@ func (t *Theme) Resolve(r RawStyle) (layout.Style, error) {
 	}
 	if r.Letter != 0 {
 		s.Letter = r.Letter
+	}
+	if r.BoldColour != "" {
+		c, err := t.colour(r.BoldColour)
+		if err != nil {
+			return s, fmt.Errorf("boldColour: %w", err)
+		}
+		s.BoldColour = c
+	}
+	if r.BoldWeight != 0 {
+		s.BoldWeight = layout.Weight(r.BoldWeight)
 	}
 	if r.Uppercase {
 		s.Uppercase = true

@@ -144,6 +144,29 @@ func (textLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 	return f
 }
 
+// splitFlow separates the children that take part in the layout from those
+// placed absolutely, which are measured but never advance anything.
+func splitFlow(children []*Node) (flow, fixed []*Node) {
+	for _, c := range children {
+		if c.Style.Absolute {
+			fixed = append(fixed, c)
+			continue
+		}
+		flow = append(flow, c)
+	}
+	return flow, fixed
+}
+
+// placeFixed measures the absolutely-placed children and puts them where the
+// theme asked, relative to the parent's content corner.
+func placeFixed(e *Engine, f *Frame, fixed []*Node, inner, height float64) {
+	for _, child := range fixed {
+		cf := e.Measure(child, Space{Width: inner, Height: height})
+		cf.X, cf.Y = child.Style.Left, child.Style.Top
+		f.Children = append(f.Children, cf)
+	}
+}
+
 // --- containers ---------------------------------------------------------------
 
 // blockLayout stacks children vertically.
@@ -154,11 +177,13 @@ func (blockLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 	b := boxOf(s, avail)
 	f := &Frame{Node: n, Style: s}
 
+	flow, fixed := splitFlow(n.Children)
+
 	y := 0.0
 	widest := 0.0
 	var growing []*Frame
 
-	for i, child := range n.Children {
+	for i, child := range flow {
 		cf := e.Measure(child, Space{Width: b.inner, Height: avail.Height})
 		f.Children = append(f.Children, cf)
 		if i > 0 {
@@ -178,6 +203,7 @@ func (blockLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 		f.Width = widest + b.inset.Left + b.inset.Right
 	}
 	f.Height = y + b.inset.Top + b.inset.Bottom
+	placeFixed(e, f, fixed, b.inner, avail.Height)
 
 	// A growing child takes the leftover height. This is what makes the two
 	// columns run the full body height — and what made reading a finished PDF
@@ -227,7 +253,8 @@ func (r rowLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 	b := boxOf(s, avail)
 	f := &Frame{Node: n, Style: s}
 
-	lines := r.fill(e, n, b, avail)
+	flow, fixed := splitFlow(n.Children)
+	lines := r.fill(e, flow, n.Style, b, avail)
 
 	crossGap := s.CrossGap
 	if crossGap == 0 {
@@ -257,6 +284,7 @@ func (r rowLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 		f.Width = widest + b.inset.Left + b.inset.Right
 	}
 	f.Height = y + b.inset.Top + b.inset.Bottom
+	placeFixed(e, f, fixed, b.inner, avail.Height)
 	return f
 }
 
@@ -277,13 +305,12 @@ func (r rowLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 // is measured once against the full row, and the wrap decision is made
 // afterwards, from a width that is true. That is also what flexbox does: it
 // measures max-content first, then breaks.
-func (r rowLayout) fill(e *Engine, n *Node, b box, avail Space) [][]seat {
-	s := n.Style
+func (r rowLayout) fill(e *Engine, children []*Node, s Style, b box, avail Space) [][]seat {
 	var lines [][]seat
 	var cur []seat
 	curW := 0.0
 
-	for _, child := range n.Children {
+	for _, child := range children {
 		cf := e.Measure(child, Space{Width: b.inner, Height: avail.Height})
 		// A child that neither fixes its width nor grows takes the width of its
 		// content, as flexbox does; only a growing child claims the remainder.

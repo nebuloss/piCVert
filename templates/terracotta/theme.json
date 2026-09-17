@@ -14,9 +14,13 @@
     "onSurface": "#1A1C1F",
     "onSurfaceVar": "#474B52",
     "outline": "#D5DBE6",
-    "headerFrom": "#F3D9C9",
-    "headerMid": "#E2AE8C",
-    "headerTo": "#C4764B"
+    "headerFrom": "#D3E3FD",
+    "headerMid": "#E7EFFC",
+    "headerTo": "#CFE7DC",
+    "headerInk": "#0A1B33",
+    "headerChip": "#0B57D0",
+    "headerOnChip": "#FFFFFF",
+    "headerSubtle": "#04264E"
   },
   "styles": {
     "page": {
@@ -69,7 +73,7 @@
       "display": "text",
       "size": 32,
       "weight": 500,
-      "colour": "#0A1B33",
+      "colour": "$headerInk",
       "letter": -0.5,
       "lineHeight": 1
     },
@@ -78,8 +82,8 @@
       "self": "start",
       "size": 11.5,
       "weight": 500,
-      "colour": "$onPrimary",
-      "background": "$primary",
+      "colour": "$headerOnChip",
+      "background": "$headerChip",
       "padding": "5 14",
       "radius": 999
     },
@@ -87,7 +91,9 @@
       "display": "text",
       "size": 11.5,
       "weight": 500,
-      "colour": "$onPrimaryContainer"
+      "colour": "$headerSubtle",
+      "boldColour": "$primary",
+      "boldWeight": 500
     },
     "body": {
       "display": "row",
@@ -240,7 +246,9 @@
       "display": "text",
       "size": 10.6,
       "lineHeight": 1.5,
-      "colour": "$onSurfaceVar"
+      "colour": "$onSurfaceVar",
+      "boldColour": "$onSurface",
+      "boldWeight": 500
     },
     "item": {
       "display": "row",
@@ -320,58 +328,101 @@
       "size": 9.9,
       "lineHeight": 1.4,
       "grow": 1,
-      "colour": "$onSurfaceVar"
+      "colour": "$onSurfaceVar",
+      "boldColour": "$onSurface",
+      "boldWeight": 600
     },
     "bulletProj": {
       "extends": "bullet",
       "margin": "0 0 3 0"
     },
-    "headerMarks": {
-      "display": "row",
-      "grow": 1,
-      "align": "start"
-    },
-    "hexA": {
+    "hex1": {
       "display": "polygon",
       "sides": 6,
-      "corner": 16,
+      "absolute": true,
+      "left": 628.6,
+      "top": 3.7,
+      "width": 92.4,
+      "height": 106.7,
+      "corner": 12.7,
       "background": "$onPrimary",
-      "width": 80,
-      "height": 92,
+      "opacity": 0.075
+    },
+    "hex2": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 628.6,
+      "top": 3.7,
+      "width": 92.4,
+      "height": 106.7,
+      "corner": 12.7,
+      "background": "$onPrimary",
       "opacity": 0.1,
-      "stroke": 1.5,
-      "margin": "-10 0 0 96"
+      "stroke": 2.0
     },
-    "hexB": {
+    "hex3": {
       "display": "polygon",
       "sides": 6,
-      "corner": 16,
+      "absolute": true,
+      "left": 674.6,
+      "top": 82.8,
+      "width": 92.4,
+      "height": 106.7,
+      "corner": 12.7,
       "background": "$onPrimary",
-      "width": 48,
-      "height": 55,
-      "opacity": 0.07,
-      "margin": "64 0 0 -28"
+      "opacity": 0.06
     },
-    "hexC": {
+    "hex4": {
       "display": "polygon",
       "sides": 6,
-      "corner": 16,
+      "absolute": true,
+      "left": 597.0,
+      "top": 99.4,
+      "width": 63.7,
+      "height": 73.6,
+      "corner": 12.7,
       "background": "$onPrimary",
-      "width": 66,
-      "height": 76,
       "opacity": 0.09,
-      "stroke": 1.3,
-      "margin": "96 0 0 -22"
+      "stroke": 2.0
     },
-    "hexD": {
+    "hex5": {
       "display": "polygon",
       "sides": 6,
-      "corner": 16,
+      "absolute": true,
+      "left": 693.7,
+      "top": 104.9,
+      "width": 54.2,
+      "height": 62.6,
+      "corner": 12.7,
       "background": "$onPrimary",
-      "width": 38,
-      "height": 44,
-      "opacity": 0.11,
-      "margin": "6 0 0 -30"
+      "opacity": 0.08,
+      "stroke": 2.0
+    },
+    "hex6": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 587.4,
+      "top": 20.2,
+      "width": 35.1,
+      "height": 40.5,
+      "corner": 12.7,
+      "background": "$onPrimary",
+      "opacity": 0.07
+    },
+    "hex7": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 525.8,
+      "top": 134.3,
+      "width": 47.8,
+      "height": 55.2,
+      "corner": 12.7,
+      "background": "$onPrimary",
+      "opacity": 0.05,
+      "stroke": 2.0
     }
   },
   "page": {
@@ -403,21 +454,25 @@
             ]
           },
           {
-            "style": "headerMarks",
-            "children": [
-              {
-                "style": "hexA"
-              },
-              {
-                "style": "hexB"
-              },
-              {
-                "style": "hexC"
-              },
-              {
-                "style": "hexD"
-              }
-            ]
+            "style": "hex1"
+          },
+          {
+            "style": "hex2"
+          },
+          {
+            "style": "hex3"
+          },
+          {
+            "style": "hex4"
+          },
+          {
+            "style": "hex5"
+          },
+          {
+            "style": "hex6"
+          },
+          {
+            "style": "hex7"
           }
         ]
       },

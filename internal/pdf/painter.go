@@ -126,17 +126,23 @@ func parseHex(s string) (r, g, b float64, ok bool) {
 
 // --- the Painter interface ----------------------------------------------------
 
-// Box paints a container: its background, its border, then what is inside it.
-func (p *Painter) Box(f *layout.Frame, in func()) {
+// surface paints a frame's own background and border.
+//
+// Shared by every node shape, because a background belongs to a BOX and any
+// node is one. It used to live inside Box alone, so a text node with a
+// background — a chip, a date badge, the title pill — drew its text and nothing
+// behind it. On screen those all have their fill, because the HTML painter
+// writes the same geometry for every shape; the PDF quietly dropped it.
+func (p *Painter) surface(f *layout.Frame) {
 	s := f.Style
 	x, y := pt(f.X), p.y(f.Y)
 	w, h := pt(f.Width), pt(f.Height)
+	if w <= 0 || h <= 0 {
+		return
+	}
 
-	// An ellipse is a box whose radius is half its shorter side. Said here
-	// rather than carried as a separate node kind, because that is exactly what
-	// the HTML painter means by `border-radius:50%` — and a dot that is round
-	// on the page and square in the PDF is the kind of divergence this engine
-	// exists to remove. It WAS square, until this line.
+	// An ellipse is a box whose radius is half its shorter side — what the HTML
+	// painter means by `border-radius:50%`.
 	radius := pt(s.Radius)
 	if s.Display == layout.Ellipse {
 		radius = math.Min(w, h) / 2
@@ -144,7 +150,7 @@ func (p *Painter) Box(f *layout.Frame, in func()) {
 
 	if g := s.Background.Gradient; g != nil {
 		p.gradient(f, g)
-	} else if s.Background.Colour != "" && w > 0 && h > 0 {
+	} else if s.Background.Colour != "" {
 		p.ops.WriteString("q\n")
 		if p.setFill(s.Background.Colour) {
 			p.rect(x, y, w, h, radius)
@@ -163,11 +169,15 @@ func (p *Painter) Box(f *layout.Frame, in func()) {
 		}
 		p.ops.WriteString("Q\n")
 	}
+}
 
-	// Clipping is deliberately NOT applied. The page is the only node that
-	// clips, and a PDF that silently cut a card off would hide exactly the
-	// overflow the engine exists to report — better that it shows, since the
-	// fit check has already named it.
+// Box paints a container: its background, its border, then what is inside it.
+func (p *Painter) Box(f *layout.Frame, in func()) {
+	p.surface(f)
+	// Clipping is deliberately NOT applied to anything but the page. A PDF that
+	// silently cut a card off would hide exactly the overflow the engine exists
+	// to report — better that it shows, since the fit check has already named
+	// it.
 	in()
 }
 
@@ -367,6 +377,7 @@ func polygonPoints(sides int, rotate float64) []float64 {
 
 // Image paints a picture or an inline glyph.
 func (p *Painter) Image(f *layout.Frame) {
+	p.surface(f)
 	src := f.Node.Src
 	if spec, ok := strings.CutPrefix(src, "icon:"); ok {
 		p.icon(f, spec)
@@ -434,6 +445,7 @@ func parseViewBox(vb string) float64 {
 
 // Text draws the lines the engine already broke.
 func (p *Painter) Text(f *layout.Frame) {
+	p.surface(f)
 	s := f.Style
 	left := pt(f.X + s.Padding.Left + s.Border.Width)
 	top := f.Y + s.Padding.Top + s.Border.Width
@@ -449,7 +461,7 @@ func (p *Painter) Text(f *layout.Frame) {
 			p.used[face] = true
 
 			p.ops.WriteString("BT\n")
-			if p.setFill(orElse(piece.Colour, orElse(s.Colour, "#000000"))) {
+			if p.setFill(orElse(s.ColourOf(piece.Bold, piece.Colour), "#000000")) {
 				fmt.Fprintf(&p.ops, "/%s %s Tf\n", face.Name, num(pt(s.Size)))
 				if s.Letter != 0 {
 					fmt.Fprintf(&p.ops, "%s Tc\n", num(pt(s.Letter)))

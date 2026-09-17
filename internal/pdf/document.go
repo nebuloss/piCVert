@@ -147,7 +147,12 @@ func (d *Document) Render(frame *layout.Frame) []byte {
 		if !strings.Contains(p.ops.String(), fmt.Sprintf("/GS%d gs", i)) {
 			continue
 		}
-		id := w.add(fmt.Sprintf("<< /Type /ExtGState /ca %s >>", num(float64(i)/100)))
+		// Both alphas: `ca` governs fills and `CA` strokes. With only `ca`, an
+		// outlined shape drew at full opacity however faint the theme asked for
+		// — which is what made a scatter of 8%-opacity hexagons read as a hard
+		// white lattice.
+		id := w.add(fmt.Sprintf("<< /Type /ExtGState /ca %s /CA %s >>",
+			num(float64(i)/100), num(float64(i)/100)))
 		gsRefs = append(gsRefs, fmt.Sprintf("/GS%d %d 0 R", i, id))
 	}
 

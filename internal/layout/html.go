@@ -403,7 +403,8 @@ func (p *HTMLPainter) Text(f *Frame) {
 			num(left), num(top+float64(i)*lh), num(line.Width), num(lh), num(lh), base)
 		for _, piece := range line.Pieces {
 			fmt.Fprintf(&p.b, `<span style="font-weight:%d;color:%s">%s</span>`,
-				int(s.WeightOf(piece.Bold).OrRegular()), orElse(piece.Colour, s.Colour),
+				int(s.WeightOf(piece.Bold).OrRegular()),
+				orElse(s.ColourOf(piece.Bold, piece.Colour), "#000000"),
 				html.EscapeString(piece.Text))
 		}
 		p.b.WriteString(`</div>`)

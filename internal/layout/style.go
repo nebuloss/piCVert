@@ -165,6 +165,18 @@ type Style struct {
 	WidthPercent float64
 	// Grow shares out leftover space along the main axis, like `flex-grow`.
 	Grow float64
+
+	// Absolute takes a node out of the flow and places it at Left/Top from its
+	// parent's content corner.
+	//
+	// ORNAMENT IS WHAT THIS IS FOR. A scatter of shapes behind a header has
+	// positions chosen by eye, overlaps its neighbours and must push nothing
+	// about — none of which any flow rule expresses, and all of which are
+	// exactly what "absolute" means. It earns its place in a closed vocabulary
+	// because both painters already work in absolute coordinates internally:
+	// this only lets a theme say so.
+	Absolute  bool
+	Left, Top float64
 	// Gap between children, along the main axis. Also the line gap when
 	// wrapping.
 	Gap float64
@@ -231,6 +243,17 @@ type Style struct {
 	LineHeight float64 // multiple of Size; zero means 1.2
 	Letter     float64 // letter-spacing, in pixels
 	Uppercase  bool
+
+	// BoldColour and BoldWeight are what a `<b>` run inside this text becomes.
+	//
+	// Bold in this design is not simply heavier: the emphasised words in a
+	// paragraph are also DARKER than the text around them, and by a different
+	// amount in each context — the profile lifts them to the body colour at
+	// weight 500, a bullet to 600, the subtitle to the header's own ink. Left
+	// to a single rule, every emphasis came out the same and the page lost the
+	// distinction the design draws with it.
+	BoldColour string
+	BoldWeight Weight
 }
 
 // LineHeightOr is the line height a style names, or a plain default.
@@ -254,10 +277,25 @@ func (s Style) WeightOf(bold bool) Weight {
 	if !bold {
 		return s.Weight
 	}
+	if s.BoldWeight != 0 {
+		return s.BoldWeight
+	}
 	if s.Weight >= Bold {
 		return s.Weight
 	}
 	return Bold
+}
+
+// ColourOf is the colour a run is drawn in: its own, then the style's rule for
+// emphasis, then the style's own.
+func (s Style) ColourOf(bold bool, own string) string {
+	if own != "" {
+		return own
+	}
+	if bold && s.BoldColour != "" {
+		return s.BoldColour
+	}
+	return s.Colour
 }
 
 // AlignOf is how a child sits across a row: its own choice if it made one, its
