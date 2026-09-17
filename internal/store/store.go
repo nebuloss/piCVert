@@ -26,6 +26,7 @@ import (
 	"picvert/internal/document"
 	"picvert/internal/engine"
 	"picvert/internal/profiles"
+	"picvert/internal/quota"
 	"picvert/internal/templates"
 	"picvert/internal/validate"
 )
@@ -135,6 +136,24 @@ func (s *Store) writeLocked(slug string, input any, lang string) (document.Doc, 
 		return nil, err
 	}
 	raw = append(raw, '\n')
+
+	// Room to write it, checked HERE because this is the single door — a quota
+	// enforced per route is a quota missing from the route somebody adds next.
+	//
+	// What the write ADDS, not what it weighs: a save almost always replaces a
+	// document of about the same size, and charging the full size would refuse
+	// to let anybody edit a CV that had been near its ceiling for months.
+	var adding int64 = int64(len(raw))
+	if previous, err := os.Stat(file); err == nil {
+		adding -= previous.Size()
+	}
+	if adding < 0 {
+		adding = 0
+	}
+	if err := quota.Check(p.Dir, adding, quota.FromEnv()); err != nil {
+		return nil, err
+	}
+
 	if err := writeAtomic(file, raw); err != nil {
 		return nil, err
 	}

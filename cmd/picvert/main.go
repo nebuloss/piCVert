@@ -42,6 +42,10 @@ func main() {
 		err = serveCmd(os.Args[2:])
 	case "new":
 		err = newCmd(os.Args[2:])
+	case "backup":
+		err = backupCmd(os.Args[2:])
+	case "restore":
+		err = restoreCmd(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("picvert", version)
 		return
@@ -82,6 +86,12 @@ func usage() {
   picvert new --slug <name> [--name "Full Name"] [--lang xx] [--template t]
         Creates a CV and prints its two private links. Those links are the
         only way into it.
+
+  picvert backup [--out file.tar.gz] [--keep N]
+        Writes every CV to one file, and optionally removes older ones.
+
+  picvert restore --from file.tar.gz
+        Puts one back. Refuses a data directory that already holds CVs.
 
   picvert version
 

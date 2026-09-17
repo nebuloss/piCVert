@@ -1,0 +1,19 @@
+# When the backups happen.
+#
+# Nightly, and at boot if the machine was off when one was due — a laptop or a
+# container that is not always running would otherwise silently skip days, and
+# a backup schedule that skips is one nobody finds out about until they need it.
+
+[Unit]
+Description=piCVert — nightly backup
+
+[Timer]
+OnCalendar=daily
+# Caught up after a machine has been off.
+Persistent=true
+# Spread over an hour: a fleet of these all waking at midnight is a fleet
+# hammering one filesystem at midnight.
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,42 @@
+# piCVert — take a backup.
+#
+# Started by picvert-backup.timer, never by hand in normal operation. Writes
+# one file holding every CV: documents, portraits, journals and the link file,
+# without which a restored service is one nobody can open.
+
+[Unit]
+Description=piCVert — back up every CV
+Documentation=https://github.com/nebuloss/piCVert
+# The service need not be running: a backup reads the data directory, and the
+# writes it might race with are atomic. Stopping it would be an outage to avoid
+# a problem that does not exist.
+
+[Service]
+Type=oneshot
+User=picvert
+Group=picvert
+EnvironmentFile=/etc/picvert.env
+
+# --keep is what makes this unattended. Without it a nightly backup is a disk
+# filling up on a schedule, which is a worse failure than having no backup:
+# it takes the service down with it.
+# No --out: the default name carries the date it was taken, which is what
+# --keep sorts by. systemd runs no shell, so a date substituted here would
+# arrive as the literal characters.
+WorkingDirectory=/var/lib/picvert/backups
+ExecStart=/opt/picvert/picvert backup --keep 14
+
+# The same hardening as the service, minus what a backup does not need. It
+# reads the CVs and writes one file.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/picvert/backups
+UMask=0077
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

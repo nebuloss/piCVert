@@ -145,11 +145,11 @@ elif ! id "$SERVICE_USER" >/dev/null 2>&1; then
   fi
 fi
 
-mkdir -p "$PREFIX" "$DATA/data"
-chown "$SERVICE_USER:$SERVICE_USER" "$DATA" "$DATA/data" 2>/dev/null || true
+mkdir -p "$PREFIX" "$DATA/data" "$DATA/backups"
+chown "$SERVICE_USER:$SERVICE_USER" "$DATA" "$DATA/data" "$DATA/backups" 2>/dev/null || true
 # 0750: the CVs are private by default, and the directory holding them says so
 # as well as the service does.
-chmod 0750 "$DATA" "$DATA/data"
+chmod 0750 "$DATA" "$DATA/data" "$DATA/backups"
 
 say "installing $PREFIX/picvert"
 # Into place atomically. Overwriting a running binary in place is what produces
@@ -181,8 +181,18 @@ if [ "$HAVE_SYSTEMD" = yes ]; then
     die "cannot fetch the service unit"
   chmod 0644 "$UNIT"
 
+  # Nightly backups, because a backup somebody has to remember to take is a
+  # backup that exists until the week it is needed.
+  for unit in picvert-backup.service picvert-backup.timer; do
+    fetch "https://raw.githubusercontent.com/$REPO/$VERSION/deploy/$unit" \
+      "/etc/systemd/system/$unit" ||
+      fetch "https://raw.githubusercontent.com/$REPO/main/deploy/$unit" \
+        "/etc/systemd/system/$unit" || true
+  done
+
   systemctl daemon-reload
   systemctl enable picvert >/dev/null 2>&1 || true
+  systemctl enable --now picvert-backup.timer >/dev/null 2>&1 || true
   systemctl restart picvert || true
 
   sleep 1
@@ -263,8 +273,16 @@ it is being unreachable from outside. Do not proxy it, and do not put a password
 on it either — a password-protected surface would become the only thing here
 worth attacking.
 
-Back up $DATA/data and nothing else. Every page is drawn from it on request, so
-there is no artefact to lose.
+Backups run nightly into $DATA/backups, keeping a fortnight. Take one now with:
+
+  $PREFIX/picvert backup
+
+and put one back with:
+
+  $PREFIX/picvert restore --from <file>
+
+Copy them somewhere that is not this machine. A backup on the disk it is
+protecting is a backup for exactly one kind of accident.
 EOF
 else
   echo "Upgraded. Your configuration and your CVs were left alone."

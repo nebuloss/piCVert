@@ -274,3 +274,40 @@ func TestGuessingDoesNotLockOutSomebodyWithARealLink(t *testing.T) {
 		t.Errorf("the address was not cleared by a valid link: %d", w.Code)
 	}
 }
+
+// One CV cannot be made to fill a disk.
+//
+// Asking for a language costs one request and yields a whole second document
+// with its own journal. Four hundred were accepted in a few seconds, and only
+// because the asking stopped — the per-request limits were all real and all
+// beside the point, because none of them looked at the total.
+func TestOneCVCannotGrowWithoutEnd(t *testing.T) {
+	s, slug := service(t)
+	h := s.Handler()
+	links, _ := s.Tokens.ForProfile(slug)
+	auth := map[string]string{"X-CV-Token": links.Edit}
+
+	// A small ceiling, so the test is about the rule rather than about
+	// writing eight megabytes.
+	t.Setenv("PICVERT_MAX_PROFILE_MB", "1")
+
+	refused := false
+	for a := 'a'; a <= 'z' && !refused; a++ {
+		for b := 'a'; b <= 'z'; b++ {
+			w := call(t, h, "POST", "/api/p/"+slug+"/languages",
+				map[string]any{"lang": string(a) + string(b)}, auth)
+			if w.Code == http.StatusInsufficientStorage {
+				refused = true
+				break
+			}
+		}
+	}
+	if !refused {
+		t.Fatal("676 languages were accepted without the profile ever being full")
+	}
+
+	// And the CV still works: refusing to grow is not refusing to serve.
+	if w := call(t, h, "GET", "/e/"+links.Read+"/cv.html", nil, nil); w.Code != http.StatusOK {
+		t.Errorf("a full profile stopped rendering: %d", w.Code)
+	}
+}

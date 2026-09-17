@@ -186,23 +186,62 @@ they are covered by the version check.
 
 ## Backups
 
-Back up **`/var/lib/picvert/data`** and nothing else.
+They run **nightly by themselves**, into `/var/lib/picvert/backups`, keeping a
+fortnight. The installer sets up the timer; nothing has to be remembered.
 
-That directory is the whole state: the documents, the portraits, the journals
-and the link file. Everything else — every page, every PDF — is drawn from it on
-request, so there is no artefact that can be lost or fall out of step with it.
-
-```bash
-systemctl stop picvert          # not strictly needed: writes are atomic
-tar czf picvert-$(date +%F).tar.gz -C /var/lib/picvert data
-systemctl start picvert
+```sh
+picvert backup                      # now, into the current directory
+picvert backup --keep 14            # and remove all but the newest fourteen
+picvert restore --from <file>       # put one back
 ```
 
-Stopping is optional. Every write goes to a temporary file and is renamed into
-place, so a backup taken while the service runs catches either the old document
-or the new one, never half of one.
+A backup holds every CV — documents, portraits, journals — **and the link
+file**, without which a restored service is one nobody can open. It does not
+hold the trash: that is what somebody asked to be rid of, and restoring it
+would undo a deletion they meant.
 
-## Deleting is reversible for a day
+`restore` **refuses a data directory that already holds CVs**, and that refusal
+is the feature. Restoring happens in a hurry on a bad day, and merging an old
+backup into a live service gives you CVs that existed at no single moment —
+some current, some from last week, and afterwards no way to tell which is which.
+
+The service does not need stopping. Every write is a temporary file renamed
+into place, so a backup taken while it runs catches a whole version of every
+file rather than half of one.
+
+**Copy them off the machine.** A backup on the disk it is protecting covers
+exactly one kind of accident, and not the common one.
+
+### Verified, not assumed
+
+`picvert backup` then `picvert restore` into an empty directory produces a
+**byte-identical** tree — checked with `diff -r`, including a portrait and the
+link file — and a service started on the restored data serves the same pages
+and PDFs.
+
+## How much one CV may use
+
+Two ceilings, because there are two ways to run out:
+
+| | default | what it stops |
+|---|---|---|
+| `PICVERT_MAX_PROFILE_MB` | 8 | one CV filling a disk |
+| `PICVERT_MIN_FREE_MB` | 64 | the disk filling for any other reason |
+
+The per-request limits were always there — 8 MB of body, 4 MB of portrait — and
+were beside the point, because none of them looked at the total. Asking for a
+language costs one request and yields a whole second document with its own
+journal; **four hundred were accepted in a few seconds** before this existed.
+
+A full CV is refused with a **507**, not a 400: the editor must not retry it,
+and the person needs to be told to remove something rather than to fix what
+they typed. Nothing is ever deleted to make room — what would be deleted is
+somebody's CV.
+
+The journal bounds itself separately, at 500 entries, and merges an episode of
+typing into one line: a minute at the keyboard adds two entries, not forty.
+
+## Deleting is reversible for a day## Deleting is reversible for a day
 
 A CV is deleted by whoever holds its edit link — for a self-service CV, its
 author and nobody else. It is one click, and what it destroys exists nowhere

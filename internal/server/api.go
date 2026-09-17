@@ -15,6 +15,7 @@ import (
 	"picvert/internal/engine"
 	"picvert/internal/fields"
 	"picvert/internal/profiles"
+	"picvert/internal/quota"
 	"picvert/internal/security"
 	"picvert/internal/store"
 	"picvert/internal/templates"
@@ -309,6 +310,13 @@ func statusFor(err error) int {
 	if errors.Is(err, store.ErrConflict) {
 		return http.StatusConflict
 	}
+	// Out of room is not a bad request. The editor must not retry it, and the
+	// person needs to be told to remove something rather than to fix what they
+	// typed.
+	var full *quota.Error
+	if errors.As(err, &full) {
+		return http.StatusInsufficientStorage
+	}
 	return http.StatusBadRequest
 }
 
@@ -429,6 +437,14 @@ func (s *Server) uploadPhoto(w http.ResponseWriter, r *http.Request, p *profiles
 	if len(raw) > maxPhoto {
 		fail(w, http.StatusRequestEntityTooLarge,
 			fmt.Errorf("portrait too large (%d MB maximum)", maxPhoto>>20))
+		return
+	}
+
+	// Room for it. The portrait is the one thing written outside the store, so
+	// it is the one place the door has to be repeated — and it is by far the
+	// largest thing a profile holds.
+	if err := quota.Check(p.Dir, int64(len(raw)), quota.FromEnv()); err != nil {
+		fail(w, http.StatusInsufficientStorage, err)
 		return
 	}
 
