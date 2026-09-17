@@ -27,6 +27,24 @@ interface Failure {
   error: string;
 }
 
+/** A response together with the revision the document is now at. */
+export interface Tagged<T> {
+  body: T;
+  revision: string;
+}
+
+/**
+ * A conflict is its own thing, not a bad request.
+ *
+ * The difference decides what the editor does: a bad request means stop and
+ * fix the document, a conflict means somebody else got there first and the
+ * person has a choice to make. Retrying the second forever is what an editor
+ * that could not tell them apart would do.
+ */
+export function isConflict(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 409;
+}
+
 export class HttpClient {
   /**
    * The token travels in a HEADER, never in the query string.
@@ -41,6 +59,20 @@ export class HttpClient {
 
   get<T>(path: string): Promise<T> {
     return this.send<T>('GET', path);
+  }
+
+  /**
+   * tagged is a request whose ETag the caller needs.
+   *
+   * Separate from the plain methods rather than making every one of them
+   * return a pair: two callers in this interface care about the revision and
+   * a dozen do not, and a pair everywhere would be a `.body` on every call
+   * site to buy nothing.
+   */
+  async tagged<T>(
+    method: string, path: string, body?: unknown, revision?: string,
+  ): Promise<Tagged<T>> {
+    return this.exchange<T>(method, path, { body, revision });
   }
 
   post<T>(path: string, body?: unknown, type?: string): Promise<T> {
@@ -68,14 +100,22 @@ export class HttpClient {
    * together. What the generic buys is that a renamed field stops compiling at
    * every reader — which is the failure that is otherwise invisible.
    */
-  private async send<T>(
+  /** send is the common case: the body, and nothing about the response. */
+  private async send<T>(method: string, path: string, body?: unknown, type?: string): Promise<T> {
+    return (await this.exchange<T>(method, path, { body, type })).body;
+  }
+
+  /** What a request may carry beyond its path. */
+  private async exchange<T>(
     method: string,
     path: string,
-    body?: unknown,
-    type?: string,
-  ): Promise<T> {
+    { body, type, revision }: { body?: unknown; type?: string; revision?: string },
+  ): Promise<Tagged<T>> {
     const headers: Record<string, string> = {};
     if (this.token) headers['X-CV-Token'] = this.token;
+    // The revision this client believes it is editing. The server refuses the
+    // write if the document has moved since — see store.WriteIfUnchanged.
+    if (revision) headers['If-Match'] = `"${revision}"`;
 
     let payload: BodyInit | undefined;
     if (body !== undefined) {
@@ -117,7 +157,10 @@ export class HttpClient {
         : text.slice(0, 200) || response.statusText;
       throw new HttpError(message, response.status);
     }
-    return parsed as T;
+    return {
+      body: parsed as T,
+      revision: (response.headers.get('ETag') ?? '').replace(/"/g, ''),
+    };
   }
 }
 

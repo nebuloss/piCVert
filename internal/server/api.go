@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"picvert/internal/fields"
 	"picvert/internal/profiles"
 	"picvert/internal/security"
+	"picvert/internal/store"
 	"picvert/internal/templates"
 	"picvert/internal/tokens"
 )
@@ -99,6 +101,10 @@ func (s *Server) api() http.Handler {
 			fail(w, http.StatusInternalServerError, err)
 			return
 		}
+		// The revision this document is at. A client that keeps it can be told
+		// its save is based on something that has since changed, rather than
+		// destroying whatever changed it.
+		s.tagRevision(w, p.Slug, lang(r))
 		sendJSON(w, map[string]any{
 			"ok": true, "slug": p.Slug, "doc": doc,
 			"template":  describe(tpl),
@@ -108,7 +114,10 @@ func (s *Server) api() http.Handler {
 	}))
 
 	mux.HandleFunc("PUT /api/p/{slug}", s.write(func(r *http.Request, p *profiles.Profile, body any) (document.Doc, error) {
-		return s.Store.Write(p.Slug, body, lang(r))
+		// If-Match is how a client says which version it believes it is
+		// editing. Absent, the write goes through — the command line and
+		// anyone with curl have no revision to send.
+		return s.Store.WriteIfUnchanged(p.Slug, body, lang(r), ifMatch(r))
 	}))
 
 	mux.HandleFunc("PATCH /api/p/{slug}/identity", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
@@ -273,11 +282,25 @@ func (s *Server) write(apply func(*http.Request, *profiles.Profile, any) (docume
 		}
 		doc, err := apply(r, p, body)
 		if err != nil {
-			fail(w, http.StatusBadRequest, err)
+			fail(w, statusFor(err), err)
 			return
 		}
 		s.saved(w, p, r, doc)
 	})
+}
+
+// statusFor distinguishes “what you sent is wrong” from “what you sent was
+// right when you loaded it”.
+//
+// The difference matters to the editor: a 400 means stop and fix the document,
+// a 409 means somebody else got there first and the person has a choice to
+// make. Answering 400 for both would have the editor retrying a save that can
+// never succeed.
+func statusFor(err error) int {
+	if errors.Is(err, store.ErrConflict) {
+		return http.StatusConflict
+	}
+	return http.StatusBadRequest
 }
 
 // patch is a handler taking a partial change.
@@ -290,32 +313,52 @@ func (s *Server) patch(apply func(*http.Request, *profiles.Profile, map[string]a
 		}
 		doc, err := apply(r, p, patch)
 		if err != nil {
-			fail(w, http.StatusBadRequest, err)
+			fail(w, statusFor(err), err)
 			return
 		}
 		s.saved(w, p, r, doc)
 	})
 }
 
-// saved is the answer to every write: the stored document, and the fit.
+// saved is the answer to every write: the stored document, and the revision it
+// is now at.
 //
-// The FIT COMES BACK WITH THE SAVE. The editor needs to know whether what was
-// just typed still holds on the page, and a second round trip to ask would show
-// the answer to the previous keystroke.
+// # IT DOES NOT LAY THE PAGE OUT
+//
+// It used to report the fit, and the fit is a layout — so a save cost what a
+// render costs, measured at 193 ms against a render's 182 ms. Every change is
+// saved as it is made, so that was most of a second of one CPU per keystroke,
+// and it put a hard ceiling of about five characters a second on the whole
+// service no matter how many people were using it.
+//
+// Saving is now validate-and-write and nothing else: a few kilobytes of JSON,
+// microseconds. The page is drawn when somebody wants to look at it, which is
+// on a pause in typing rather than on a letter, and by a different route.
+//
+// THE REVISION COMES BACK, because without it a client would have to reload
+// before its next save, or send the revision it started from and conflict with
+// itself.
 func (s *Server) saved(w http.ResponseWriter, p *profiles.Profile, r *http.Request, doc document.Doc) {
 	s.forget(p)
-	sendJSON(w, map[string]any{"ok": true, "doc": doc, "fit": s.fitOf(p, lang(r))})
+	s.tagRevision(w, p.Slug, lang(r))
+	sendJSON(w, map[string]any{"ok": true, "doc": doc})
 }
 
-// forget drops the cached rendering of a profile.
-func (s *Server) forget(p *profiles.Profile) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for key := range s.pages {
-		if strings.HasPrefix(key, p.Dir+string(filepath.Separator)) {
-			delete(s.pages, key)
-		}
+// tagRevision puts the document's current revision on the response.
+func (s *Server) tagRevision(w http.ResponseWriter, slug, language string) {
+	if rev, err := s.Store.Revision(slug, language); err == nil {
+		w.Header().Set("ETag", `"`+rev+`"`)
 	}
+}
+
+// ifMatch is the revision a client claims to be editing, without its quotes.
+func ifMatch(r *http.Request) string {
+	return strings.Trim(r.Header.Get("If-Match"), `"`)
+}
+
+// forget drops every cached rendering of a profile — all its languages.
+func (s *Server) forget(p *profiles.Profile) {
+	s.pages.forget(p.Dir + string(filepath.Separator))
 }
 
 // Fit is what the editor shows about the page: whether it holds, how much room
