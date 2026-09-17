@@ -3,6 +3,7 @@ package layout
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -97,6 +98,13 @@ func (f *Fonts) Load(family string, weight Weight, italic bool, file string) err
 // Falling back rather than failing: a theme asking for a weight it did not ship
 // should draw in the nearest one it did, exactly as a browser would, instead of
 // refusing to render a CV over a missing italic.
+//
+// THE ORDER OF THE SEARCH IS FIXED, and that is not a detail. Ranging over the
+// map directly picks an arbitrary winner among equally close weights — a
+// request for 600 is exactly as far from Medium as from Bold — so the same CV
+// measured twice came out with different metrics, and the page it produced
+// changed between one run and the next. A renderer whose output depends on map
+// iteration order cannot be compared against anything, including itself.
 func (f *Fonts) face(family string, weight Weight, italic bool) *face {
 	if hit := f.faces[key(family, weight, italic)]; hit != nil {
 		return hit
@@ -106,26 +114,47 @@ func (f *Fonts) face(family string, weight Weight, italic bool) *face {
 			return hit
 		}
 	}
-	// Nearest weight in the same family.
-	best, bestDist := (*face)(nil), 1<<30
-	for k, candidate := range f.faces {
+	// Nearest weight in the same family. Ties go to the heavier face above 500
+	// and the lighter below, which is the rule a browser follows.
+	best, bestDist, bestWeight := (*face)(nil), 1<<30, 0
+	for _, k := range f.keys() {
 		parts := strings.SplitN(k, "|", 3)
 		if parts[0] != family {
 			continue
 		}
 		var w int
 		fmt.Sscanf(parts[1], "%d", &w)
-		if d := abs(w - int(weight)); d < bestDist {
-			best, bestDist = candidate, d
+		d := abs(w - int(weight))
+		better := d < bestDist
+		if d == bestDist && best != nil {
+			if weight > 500 {
+				better = w > bestWeight
+			} else {
+				better = w < bestWeight
+			}
+		}
+		if better {
+			best, bestDist, bestWeight = f.faces[k], d, w
 		}
 	}
 	if best != nil {
 		return best
 	}
-	for _, any := range f.faces {
-		return any
+	// No such family at all: any face, but always the SAME any face.
+	for _, k := range f.keys() {
+		return f.faces[k]
 	}
 	return nil
+}
+
+// keys is every registered face, in a fixed order.
+func (f *Fonts) keys() []string {
+	out := make([]string, 0, len(f.faces))
+	for k := range f.faces {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func abs(v int) int {

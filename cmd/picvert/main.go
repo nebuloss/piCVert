@@ -158,7 +158,7 @@ func build(profileDir, lang string) (*prepared, error) {
 
 	usable := layout.PageHeight - tpl.Theme.PagePadding()
 	fitted := layout.NewEngine(fonts).LayoutFitted(
-		compose, layout.PageWidth, layout.PageHeight, usable)
+		compose, layout.PageWidth, layout.PageHeight, usable, len(tpl.Columns))
 	if composeErr != nil {
 		return nil, composeErr
 	}
@@ -276,26 +276,26 @@ func fitCmd(args []string) error {
 	return nil
 }
 
-// fitSummary says whether the page holds, and what that cost.
+// fitSummary says whether the page holds, and at what setting.
 //
-// The tightening is REPORTED, never hidden. Someone whose CV only fits at 62%
+// The setting is REPORTED, never hidden. Someone whose CV only fits at 62%
 // spacing has a CV that is too long, and is owed that fact even though the page
 // in front of them looks fine — it is the difference between a document that
 // fits and one that has been made to.
 func fitSummary(p *prepared) string {
 	f := p.Fitted
-	switch {
-	case !f.Fits:
+	if !f.Fits {
 		return "DOES NOT FIT, even set as tightly as this engine will go"
-	case !f.Tightened:
-		return "fits on one page"
-	case f.Density.Text < 1:
-		return fmt.Sprintf("fits — tightened to %.0f%% spacing and %.0f%% type",
-			f.Density.Spacing*100, f.Density.Text*100)
-	default:
-		return fmt.Sprintf("fits — tightened to %.0f%% spacing",
-			f.Density.Spacing*100)
 	}
+	lo, hi := f.Spread()
+	spacing := fmt.Sprintf("%.0f%%", lo*100)
+	if hi-lo > 0.005 {
+		spacing = fmt.Sprintf("%.0f–%.0f%%", lo*100, hi*100)
+	}
+	if f.Density.Text < 1 {
+		return fmt.Sprintf("fits — spacing %s, type %.0f%%", spacing, f.Density.Text*100)
+	}
+	return fmt.Sprintf("fits — spacing %s", spacing)
 }
 
 var photoMIME = map[string]string{
