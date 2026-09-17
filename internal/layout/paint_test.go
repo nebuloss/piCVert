@@ -85,3 +85,60 @@ func TestTextBoxShrinksToItsContent(t *testing.T) {
 		t.Errorf("a two-letter paragraph measured %.0fpx wide inside a 400px column", got.Width)
 	}
 }
+
+// The page is painted like any other box, style included.
+//
+// It used to be written by hand — a div with a width, a height and a clip —
+// with only its CHILDREN painted, so the page's own style was silently
+// dropped. The theme asks for a pale surface behind everything and the page
+// came out white; every card is white too, so a column of them disappeared into
+// the background and only their contents showed. That reads as cards having
+// lost their shape, which is a long way from the cause.
+func TestPageIsPaintedWithItsOwnStyle(t *testing.T) {
+	e := NewEngine(NewFonts())
+	card := Box(Style{Display: Block, Width: 100, Height: 40,
+		Radius: 20, Background: Fill{Colour: "#FFFFFF"}})
+	page := Box(Style{Display: Block, Padding: All(30),
+		Background: Fill{Colour: "#F5F8FE"}}, card)
+
+	root := e.Layout(page, 794, 1123)
+	html := RenderHTML(&Render{Frame: root, Width: 794, Height: 1123, Usable: 1093})
+
+	if !strings.Contains(html, "background:#F5F8FE") {
+		t.Errorf("the page lost its own background:\n%s", html)
+	}
+	if !strings.Contains(html, "border-radius:20px") {
+		t.Errorf("the card lost its rounded corners:\n%s", html)
+	}
+	// The page is the positioning context for everything inside it.
+	if !strings.Contains(html, `class="page" style="position:relative`) {
+		t.Errorf("the page must be the positioned ancestor:\n%s", html)
+	}
+}
+
+// A sheet of A4 is 794x1123 whatever a theme would prefer.
+//
+// The page is a block, and a block sizes itself to its content — so left to
+// itself it simply grew to fit whatever was put on it. Nothing ever overflowed,
+// and the fit check had nothing to report: exactly the failure a one-page CV
+// engine exists to prevent.
+func TestPageKeepsItsSizeWhateverItHolds(t *testing.T) {
+	e := NewEngine(NewFonts())
+	// Named, because overflow is reported by name — a block the theme did not
+	// name cannot be pointed at, which is why the conformance kit insists every
+	// card has an id.
+	tall := Box(Style{Display: Block, Width: 100, Height: 4000}).Named("too-tall")
+	// A theme that says nothing about the page size, as themes do.
+	page := Box(Style{Display: Block, Padding: All(30)}, tall)
+
+	root := e.Layout(page, 794, 1123)
+	if root.Height != 1123 || root.Width != 794 {
+		t.Errorf("the page grew to %.0fx%.0f; it must stay 794x1123", root.Width, root.Height)
+	}
+	if !root.Style.Clip {
+		t.Error("the page must clip: what runs past its edge is what overflow reports")
+	}
+	if root.Fits(1093) {
+		t.Error("a 4000px block must be reported as overflowing")
+	}
+}

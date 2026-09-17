@@ -30,6 +30,10 @@ import (
 // reading order and each holds real text.
 type HTMLPainter struct {
 	b strings.Builder
+	// class is put on the next box painted, and then cleared. Only the page
+	// gets one: it is the handle the surrounding document needs in order to
+	// scale the sheet, and nothing inside needs naming.
+	class string
 	// origin is the content corner of the enclosing box. CSS positions an
 	// absolute child against its positioned ancestor, so the absolute figures
 	// the engine computed have to be made relative on the way out — and this is
@@ -40,16 +44,25 @@ type HTMLPainter struct {
 type point struct{ x, y float64 }
 
 // RenderHTML paints a page and returns its markup.
+// RenderHTML paints a page and returns its markup.
+//
+// The page is painted like any other box, and that is the point. It used to be
+// written by hand here — a div with a width, a height and a clip — and only its
+// CHILDREN were painted. So the page's own style was silently dropped: the
+// theme asks for a pale surface behind everything, and the page came out white.
+// Every card is white too, so a whole column of them vanished into the
+// background and only their contents showed, which reads as cards that have
+// lost their shape rather than as a missing backdrop.
+//
+// A root that is exempt from the painting rules is a root whose style nobody
+// checks. Painting it normally means the theme is obeyed at every level, and
+// the class name is all this function still has to add.
 func RenderHTML(r *Render) string {
-	p := &HTMLPainter{}
-	fmt.Fprintf(&p.b,
-		`<div class="page" style="position:relative;width:%spx;height:%spx;overflow:hidden">`,
-		num(r.Width), num(r.Height))
+	p := &HTMLPainter{class: "page"}
+	// The page is positioned by the wrapper that scales it, not by an ancestor
+	// frame, so it is written from the origin.
 	p.origin = point{r.Frame.X, r.Frame.Y}
-	for _, child := range r.Frame.Children {
-		child.Paint(p)
-	}
-	p.b.WriteString(`</div>`)
+	r.Frame.Paint(p)
 	return p.b.String()
 }
 
@@ -63,8 +76,15 @@ func num(v float64) string {
 func (p *HTMLPainter) frame(f *Frame) string {
 	s := f.Style
 	var style strings.Builder
-	fmt.Fprintf(&style, "position:absolute;left:%spx;top:%spx;width:%spx;height:%spx",
-		num(f.X-p.origin.x), num(f.Y-p.origin.y), num(f.Width), num(f.Height))
+	if p.class != "" {
+		// The page itself: `relative`, so it is the box every absolute
+		// descendant is measured against, and so the wrapper can place it.
+		fmt.Fprintf(&style, "position:relative;width:%spx;height:%spx",
+			num(f.Width), num(f.Height))
+	} else {
+		fmt.Fprintf(&style, "position:absolute;left:%spx;top:%spx;width:%spx;height:%spx",
+			num(f.X-p.origin.x), num(f.Y-p.origin.y), num(f.Width), num(f.Height))
+	}
 
 	if s.Display == Ellipse {
 		style.WriteString(";border-radius:50%")
@@ -110,7 +130,12 @@ func cssBackground(fill Fill) string {
 // painter's only job is to express that same position relative to the box CSS
 // will measure it from.
 func (p *HTMLPainter) Box(f *Frame, in func()) {
-	fmt.Fprintf(&p.b, `<div style="%s">`, p.frame(f))
+	if p.class != "" {
+		fmt.Fprintf(&p.b, `<div class="%s" style="%s">`, p.class, p.frame(f))
+		p.class = ""
+	} else {
+		fmt.Fprintf(&p.b, `<div style="%s">`, p.frame(f))
+	}
 	// Saved and restored rather than recomputed on the way out, so a change
 	// here cannot leave the origin pointing at the wrong ancestor.
 	saved := p.origin

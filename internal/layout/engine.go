@@ -25,6 +25,20 @@ func NewEngine(f *Fonts) *Engine { return &Engine{Fonts: f} }
 //
 // Folding any two together means guessing one of them.
 func (e *Engine) Layout(root *Node, pageWidth, pageHeight float64) *Frame {
+	// THE PAGE'S SIZE IS THE ENGINE'S, NOT THE THEME'S. A sheet of A4 is
+	// 794x1123 whatever a theme would prefer, and a theme that could set it
+	// could quietly grant itself a taller page — which is the one thing a
+	// one-page CV engine cannot allow.
+	//
+	// It is imposed here rather than trusted from the theme because a block
+	// sizes itself to its content: left to itself the page simply grew to fit
+	// whatever was put on it, so nothing ever overflowed and the fit check had
+	// nothing to report. The page must be the fixed thing that content fails to
+	// fit inside.
+	root.Style.Width = pageWidth
+	root.Style.Height = pageHeight
+	root.Style.Clip = true
+
 	inherit(root, Style{})
 	frame := e.Measure(root, Space{Width: pageWidth, Height: pageHeight})
 	place(frame, 0, 0)
