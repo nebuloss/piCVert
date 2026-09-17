@@ -42,7 +42,7 @@ func Document(r *Render, fonts []FontDecl, templateDir, sharedDir, title string)
 	b.WriteString("*{margin:0;padding:0;box-sizing:content-box}\n")
 	b.WriteString("html,body{color-scheme:only light;background:#fff}\n")
 	b.WriteString("</style>\n</head>\n<body>\n")
-	b.WriteString(r.Frame.HTML(r.Width, r.Height))
+	b.WriteString(RenderHTML(r))
 	b.WriteString("\n</body>\n</html>\n")
 
 	page := b.String()

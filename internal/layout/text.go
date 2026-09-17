@@ -53,16 +53,9 @@ func tokenise(spans []Span, s Style, f *Fonts) []token {
 		if s.Uppercase {
 			text = strings.ToUpper(text)
 		}
-		weight := s.Weight
-		if span.Bold {
-			// Bold inside a paragraph is a heavier face of the same family, not
-			// a different block: it has to be measured in the face it will be
-			// drawn in, or the line breaks where it is not drawn.
-			weight = Bold
-			if s.Weight >= Bold {
-				weight = s.Weight
-			}
-		}
+		// Measured in the face it will be DRAWN in, or the line breaks where it
+		// is not drawn.
+		weight := s.WeightOf(span.Bold)
 		colour := span.Colour
 		for _, chunk := range splitKeepingSpaces(text) {
 			isSpace := strings.TrimSpace(chunk) == ""

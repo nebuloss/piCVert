@@ -43,16 +43,7 @@ func (r *Render) Margins(regions []string) Margins {
 		return out
 	}
 	for i, name := range regions {
-		region := body.Children[i]
-		// A region stretches to the full body height whatever it holds, so its
-		// own box says nothing. Its content ends where its LAST CHILD ends.
-		used := region.Y
-		for _, child := range region.Children {
-			if bottom := child.Y + child.Height; bottom > used {
-				used = bottom
-			}
-		}
-		out[name] = round1(r.Usable - used)
+		out[name] = round1(r.Usable - body.Children[i].ContentBottom())
 	}
 	return out
 }

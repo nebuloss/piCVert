@@ -171,6 +171,62 @@ type Style struct {
 	Uppercase  bool
 }
 
+// LineHeightOr is the line height, or the default when the theme says nothing.
+//
+// A method rather than a bare field read, because "zero means 1.2" is a rule
+// about this type and belongs to it — every caller that re-derived it would be
+// a chance to derive it differently.
+func (s Style) LineHeightOr() float64 {
+	if s.LineHeight > 0 {
+		return s.LineHeight
+	}
+	return 1.2
+}
+
+// WeightOf is the weight to draw a run in, given whether it is bold.
+//
+// Bold inside a paragraph is a heavier face of the SAME family, never a
+// different block — and a style already at bold or above stays where it is
+// rather than trying to go heavier than it shipped.
+func (s Style) WeightOf(bold bool) Weight {
+	if !bold {
+		return s.Weight
+	}
+	if s.Weight >= Bold {
+		return s.Weight
+	}
+	return Bold
+}
+
+// AlignOf is how a child sits across a row: its own choice if it made one, its
+// parent's otherwise.
+func (s Style) AlignOf(child Style) Align {
+	if child.SelfAlign != nil {
+		return *child.SelfAlign
+	}
+	return s.Align
+}
+
+// inheritFrom takes the typography an ancestor settled, for the properties CSS
+// itself inherits and no others.
+func (s *Style) inheritFrom(from Style) {
+	if s.Family == "" {
+		s.Family = from.Family
+	}
+	if s.Size == 0 {
+		s.Size = from.Size
+	}
+	if s.Weight == 0 {
+		s.Weight = from.Weight
+	}
+	if s.Colour == "" {
+		s.Colour = from.Colour
+	}
+	if s.LineHeight == 0 {
+		s.LineHeight = from.LineHeight
+	}
+}
+
 // Span is a run of text in one style. A paragraph is a list of them, which is
 // how `<b>` inside a sentence stays part of the same wrapped text instead of
 // becoming its own block.
