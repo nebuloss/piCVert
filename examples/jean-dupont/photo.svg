@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Silhouette générique : le profil d'exemple ne contient aucune image réelle. -->
+  <rect width="200" height="200" fill="#D3E3FD"/>
+  <circle cx="100" cy="78" r="34" fill="#0B57D0" opacity=".55"/>
+  <path d="M100 122c-34 0-62 22-68 52h136c-6-30-34-52-68-52z" fill="#0B57D0" opacity=".55"/>
+</svg>

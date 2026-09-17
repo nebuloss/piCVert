@@ -1,0 +1,161 @@
+<div align="center">
+
+<img src="assets/picvert.svg" width="120" alt="">
+
+# piCVert
+
+**A CV engine that lays the page out once.**
+
+<sub>*pic vert* — the green woodpecker. It works one upright surface, taps at an exact spot, and never wanders off it.</sub>
+
+</div>
+
+---
+
+## The problem it exists to solve
+
+A CV is one page. Not "about a page": `794×1123` px with `overflow:hidden`, where
+anything past the edge is cut off in silence.
+
+The usual way to build one is to lay it out twice — the browser does it from
+CSS for the screen, and a PDF library does it again for the file you send. Both
+are given the same design, and they agree about it. They just don't agree about
+where paragraphs break.
+
+Measured on a real CV, on the same four blocks:
+
+| block | browser | PDF engine | difference |
+|---|---:|---:|---:|
+| Profile | 129.0 | 124.5 | +4.5 |
+| Experience | 333.2 | 306.0 | **+27.2** |
+| Education | 214.5 | 224.5 | **−10.0** |
+| Projects | 156.5 | 149.3 | +7.2 |
+| | **833.2** | **804.3** | **+28.9** |
+
+Note the signs change. It is not a scale factor or a padding mistake — the boxes
+agree. The two engines wrap the same sentences into a different number of lines.
+
+Twenty-nine pixels is about one line. The CV fitted its page by less than that.
+So the editor reported **fits** from one engine while the other quietly cut the
+last section off the bottom — the measurement said yes and the page said no.
+
+## What it does instead
+
+```
+cv.json ──► LAYOUT ENGINE ──► frame: boxes + already-broken lines
+                                   ├──► HTML emitter
+                                   └──► PDF emitter
+```
+
+The layout is computed **once**. Both emitters receive the same frame, with the
+line breaks already decided. The HTML emitter places each measured line at the
+baseline it was measured for, so the browser is given no wrapping decision to
+make and cannot reach a different answer.
+
+The usual objection to pre-broken text — that it cannot reflow — does not apply
+here. The page is a fixed box that never reflows. This is the rare layout where
+baking the lines in is not a compromise.
+
+## Measuring is the whole problem
+
+Laying boxes out is arithmetic. Deciding where a paragraph breaks depends on the
+exact advance of every glyph and the kerning of every pair, so widths come from
+the font file itself — the same file the page embeds and the PDF will embed.
+Nothing estimates.
+
+Checked against a real browser on real sentences: **41 of 42 paragraphs break
+exactly where Chrome breaks them.** The remaining one takes an extra line.
+
+That asymmetry is deliberate. Chrome truncates the font size to 1/64 px before
+scaling — asked for 10.6 px it draws at `678/64 = 10.59375`, which is checkable:
+`1086/2048 × 10.59375 = 5.6180`, exactly what it reports for `e`, against this
+engine's exact `5.6209`. Reproducing that would mean matching one browser at the
+expense of Firefox, Safari and the PDF. So the rule is one-sided: **this engine
+may measure text as wider than it will be drawn, never narrower.** A line it says
+fits always fits, and the fit check errs towards asking you to shorten a CV that
+would have held — an annoyance, where the opposite is a CV cut off in silence.
+
+## A theme is data
+
+A template is a directory. Adding a layout means adding a folder — no Go, no
+rebuild.
+
+```
+templates/material-you/
+  template.json   identity, regions, accepted sections, fonts
+  theme.json      palette, named styles, composition
+  icons.json      glyph set
+  cover.svg       picker illustration
+```
+
+`theme.json` states the palette once, the styles once, and how a document
+becomes a page:
+
+```json
+"items": {
+  "style": "card",
+  "children": [
+    { "repeat": "items", "children": [
+      { "style": "itRole",   "text": "{role}" },
+      { "style": "itPeriod", "when": "period", "text": "{period}" }
+    ]}
+  ]
+}
+```
+
+Three additions to a plain node tree, and only three: `repeat` iterates a list,
+`when` draws something only if a field has a value, `{field}` binds one. A
+composition language that grows keywords becomes a programming language, and
+then a theme is code again with worse tools.
+
+Both the style vocabulary and the node kinds are **closed**, for the reason the
+field vocabulary is: each property has exactly one layout meaning, one CSS
+declaration and one PDF operator. A theme that could invent a property would be
+one the engine cannot lay out and one of the emitters cannot draw — which is the
+class of divergence this project exists to remove.
+
+## Use
+
+```bash
+go build -o picvert ./cmd/picvert
+
+./picvert fit    --profile examples/jean-dupont
+./picvert render --profile examples/jean-dupont --out cv.html
+```
+
+```
+$ ./picvert fit --profile examples/jean-dupont
+fits on one page
+  left     +121.1 px left
+  right      +5.9 px left
+```
+
+When it does not fit, it names what to shorten rather than quoting a number you
+cannot act on:
+
+```
+DOES NOT FIT
+  right      -8.0 px left
+  shorten: projets-techniques
+```
+
+## The page is self-contained
+
+Styles inlined, portrait as a data URI, **fonts embedded**, no network request at
+all. The fonts are not decoration: the layout was computed from those exact
+files, and drawing it in whatever the reader happens to have installed would
+move every break away from where it was measured. Subsetted and woff2-compressed,
+the four faces cost 52 KB — a sixth of the portrait already in the file.
+
+## State
+
+Working: the layout engine, text measurement and breaking, the HTML emitter,
+themes-as-data, the template registry, document validation.
+
+Not yet: the PDF emitter, and a handful of placement bugs visible on a dense CV.
+See [`docs/STATUS.md`](docs/STATUS.md).
+
+## Licence
+
+MIT. The embedded Roboto faces are Apache 2.0; they travel with the engine, and
+so does their notice.

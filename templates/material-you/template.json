@@ -1,0 +1,64 @@
+{
+  "uuid": "d0fabe4d-e425-4ea2-9b10-f92b4c46d9d3",
+  "name": "material-you",
+  "title": "Material You",
+  "version": 1,
+  "description": "Two columns, tonal cards, coloured header band. The original layout.",
+  "cover": "cover.svg",
+  "columns": [
+    "left",
+    "right"
+  ],
+  "sections": [
+    {
+      "type": "contact",
+      "column": "left",
+      "max": 1
+    },
+    {
+      "type": "chips",
+      "column": "left"
+    },
+    {
+      "type": "languages",
+      "column": "left",
+      "max": 1
+    },
+    {
+      "type": "text",
+      "column": "right"
+    },
+    {
+      "type": "items",
+      "column": "right"
+    },
+    {
+      "type": "list",
+      "column": "right"
+    }
+  ],
+  "fonts": [
+    {
+      "family": "Roboto",
+      "sources": [
+        {
+          "file": "@engine/Roboto-Regular.ttf",
+          "weight": 400
+        },
+        {
+          "file": "@engine/Roboto-Medium.ttf",
+          "weight": 500
+        },
+        {
+          "file": "@engine/Roboto-Bold.ttf",
+          "weight": 700
+        },
+        {
+          "file": "@engine/Roboto-Italic.ttf",
+          "weight": 400,
+          "style": "italic"
+        }
+      ]
+    }
+  ]
+}

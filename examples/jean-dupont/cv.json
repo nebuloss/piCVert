@@ -1,0 +1,232 @@
+{
+  "$schema": "../../schema.json",
+  "meta": {
+    "lang": "fr",
+    "template": "d0fabe4d-e425-4ea2-9b10-f92b4c46d9d3",
+    "documentTitle": "CV — Jean Dupont"
+  },
+  "content": {
+    "identity": {
+      "name": "Jean Dupont",
+      "role": "Développeur logiciel · Backend & données",
+      "subtitle": [
+        {
+          "text": "30 ans"
+        },
+        {
+          "text": "Disponible",
+          "strong": true
+        }
+      ],
+      "photo": "photo.svg",
+      "photoAlt": "Jean Dupont"
+    },
+    "sections": [
+      {
+        "id": "contact",
+        "column": "left",
+        "title": "Contact",
+        "type": "contact",
+        "rows": [
+          {
+            "icon": "location",
+            "text": "Quelque part (00000)"
+          },
+          {
+            "icon": "phone",
+            "text": "00 00 00 00 00"
+          },
+          {
+            "icon": "mail",
+            "text": "jean.dupont@example.org"
+          },
+          {
+            "icon": "linkedin",
+            "text": "linkedin.com/in/exemple"
+          },
+          {
+            "icon": "github",
+            "text": "github.com/exemple"
+          }
+        ]
+      },
+      {
+        "id": "competences",
+        "column": "left",
+        "title": "Compétences",
+        "type": "chips",
+        "tint": true,
+        "groups": [
+          {
+            "label": "Backend",
+            "chips": [
+              {
+                "text": "Python",
+                "variant": "pri"
+              },
+              {
+                "text": "Go",
+                "variant": "pri"
+              },
+              {
+                "text": "PostgreSQL",
+                "variant": "pri"
+              },
+              {
+                "text": "Redis",
+                "variant": "pri"
+              },
+              {
+                "text": "REST",
+                "variant": "pri"
+              }
+            ]
+          },
+          {
+            "label": "Outils",
+            "chips": [
+              {
+                "text": "Git",
+                "variant": ""
+              },
+              {
+                "text": "Docker",
+                "variant": ""
+              },
+              {
+                "text": "CI/CD",
+                "variant": ""
+              },
+              {
+                "text": "Terraform",
+                "variant": ""
+              }
+            ]
+          },
+          {
+            "label": "Notions",
+            "chips": [
+              {
+                "text": "Kubernetes",
+                "variant": "ghost"
+              },
+              {
+                "text": "Kafka",
+                "variant": "ghost"
+              },
+              {
+                "text": "Grafana",
+                "variant": "ghost"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "langues",
+        "column": "left",
+        "title": "Langues",
+        "type": "languages",
+        "languages": [
+          {
+            "name": "Français",
+            "level": "Langue maternelle",
+            "value": 100
+          },
+          {
+            "name": "Anglais",
+            "level": "Courant",
+            "value": 80
+          }
+        ]
+      },
+      {
+        "id": "interets",
+        "column": "left",
+        "title": "Centres d'intérêt",
+        "type": "chips",
+        "tint": true,
+        "lead": "Randonnée — 800 km parcourus en 2025",
+        "groups": [
+          {
+            "chips": [
+              {
+                "text": "Photographie",
+                "variant": ""
+              },
+              {
+                "text": "Échecs",
+                "variant": ""
+              },
+              {
+                "text": "Cuisine",
+                "variant": ""
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "profil",
+        "column": "right",
+        "title": "Profil",
+        "type": "text",
+        "text": "<b>Développeur backend</b> avec une appétence pour les <b>systèmes de données</b>. Ce profil est un exemple fictif : il sert à faire tourner et à démontrer le moteur sans exposer de données réelles. Duplique ce dossier dans <b>data/</b> pour créer un vrai CV."
+      },
+      {
+        "id": "experience",
+        "column": "right",
+        "title": "Expérience professionnelle",
+        "type": "items",
+        "items": [
+          {
+            "role": "Développeur backend senior",
+            "org": "Entreprise Exemple · édition logicielle",
+            "period": "2022 – aujourd'hui",
+            "bullets": [
+              "Conception et maintien d'une <b>API REST</b> servant plusieurs millions de requêtes par jour",
+              "Migration du stockage vers PostgreSQL, avec reprise de données sans interruption",
+              "Mise en place de la chaîne d'intégration continue et des tests de bout en bout"
+            ]
+          },
+          {
+            "role": "Développeur",
+            "org": "Autre Entreprise",
+            "period": "2019 – 2022",
+            "bullets": [
+              "Développement de services internes en Python",
+              "Automatisation du déploiement (Docker, Terraform)"
+            ],
+            "note": "Poste occupé à l'issue d'une alternance."
+          }
+        ]
+      },
+      {
+        "id": "formation",
+        "column": "right",
+        "title": "Formation",
+        "type": "items",
+        "items": [
+          {
+            "role": "Diplôme d'ingénieur — informatique",
+            "org": "École Exemple",
+            "period": "2014 – 2019",
+            "note": "Spécialité systèmes distribués"
+          }
+        ]
+      },
+      {
+        "id": "projets",
+        "column": "right",
+        "title": "Projets",
+        "type": "list",
+        "tint": true,
+        "items": [
+          "Bibliothèque open source de traitement de flux (≈ 400 étoiles)",
+          "Serveur domestique auto-hébergé (sauvegardes, supervision)",
+          "Contributions régulières à des projets libres"
+        ]
+      }
+    ]
+  }
+}

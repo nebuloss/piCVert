@@ -1,0 +1,262 @@
+{
+  "tokens": {
+    "primary": "#0B57D0",
+    "onPrimary": "#FFFFFF",
+    "primaryContainer": "#D3E3FD",
+    "onPrimaryContainer": "#04264E",
+    "secondaryContainer": "#DBE2F0",
+    "onSecondary": "#2A3B52",
+    "tertiaryContainer": "#C7ECD8",
+    "onTertiary": "#0B4228",
+    "surface": "#F5F8FE",
+    "card": "#FFFFFF",
+    "cardAlt": "#EEF2FA",
+    "onSurface": "#1A1C1F",
+    "onSurfaceVar": "#474B52",
+    "outline": "#D5DBE6",
+    "headerFrom": "#D3E3FD",
+    "headerMid": "#E7EFFC",
+    "headerTo": "#CFE7DC"
+  },
+
+  "styles": {
+    "page": {
+      "background": "$surface",
+      "padding": "30",
+      "gap": 16,
+      "clip": true,
+      "family": "Roboto",
+      "size": 10,
+      "colour": "$onSurface"
+    },
+
+    "header": {
+      "display": "row",
+      "align": "center",
+      "gap": 24,
+      "padding": "13 24",
+      "radius": 26,
+      "clip": true,
+      "background": {
+        "angle": 135,
+        "stops": [
+          { "at": 0, "colour": "$headerFrom" },
+          { "at": 0.6, "colour": "$headerMid" },
+          { "at": 1, "colour": "$headerTo" }
+        ]
+      }
+    },
+    "avatar": { "display": "image", "width": 158, "height": 158, "radius": 79 },
+    "headText": { "gap": 7 },
+    "h1": { "display": "text", "size": 32, "weight": 500, "colour": "#0A1B33", "letter": -0.5 },
+    "titleChip": {
+      "display": "text", "self": "start", "size": 11.5, "weight": 500,
+      "colour": "$onPrimary", "background": "$primary",
+      "padding": "5 14", "radius": 999
+    },
+    "subtitle": { "display": "text", "size": 11.5, "weight": 500, "colour": "$onPrimaryContainer" },
+
+    "body": { "display": "row", "gap": 16, "grow": 1 },
+    "colLeft": { "width": 244, "gap": 8 },
+    "colRight": { "grow": 1, "gap": 13 },
+
+    "card": { "background": "$card", "radius": 20, "padding": "11 15" },
+    "cardTint": { "extends": "card", "background": "$cardAlt" },
+
+    "secTitle": { "display": "row", "align": "center", "gap": 7, "margin": "0 0 8 0" },
+    "dot": { "display": "ellipse", "width": 8, "height": 8, "background": "$primary" },
+    "secTitleText": {
+      "display": "text", "size": 9.4, "weight": 700, "colour": "$primary",
+      "letter": 0.6, "uppercase": true
+    },
+
+    "contactRow": { "display": "row", "align": "center", "gap": 9, "margin": "0 0 8 0" },
+    "contactIcon": {
+      "display": "image", "width": 20, "height": 20, "radius": 7,
+      "background": "$primaryContainer", "colour": "$primary", "padding": "4"
+    },
+    "contactText": { "display": "text", "size": 9.6, "grow": 1, "colour": "$onSurfaceVar" },
+
+    "lead": {
+      "display": "text", "size": 9.5, "weight": 500, "lineHeight": 1.35,
+      "background": "$secondaryContainer", "colour": "$onSecondary",
+      "radius": 13, "padding": "7 11", "margin": "0 0 6 0"
+    },
+    "chipGroup": { "margin": "0 0 6 0", "gap": 5 },
+    "chipLabel": { "display": "text", "size": 8.8, "weight": 500, "colour": "$onSurfaceVar" },
+    "chips": { "display": "row-wrap", "gap": 4, "crossGap": 4 },
+    "chip": {
+      "display": "text", "size": 8.8, "padding": "3 8", "radius": 999,
+      "background": "$secondaryContainer", "colour": "$onSecondary"
+    },
+
+    "lang": { "margin": "0 0 7 0" },
+    "langTop": { "display": "row", "justify": "between", "margin": "0 0 4 0" },
+    "langName": { "display": "text", "size": 9.6, "weight": 500 },
+    "langLevel": { "display": "text", "size": 8.8, "colour": "$onSurfaceVar" },
+    "bar": { "background": "$cardAlt", "height": 6, "radius": 3, "clip": true },
+    "barFill": { "background": "$primary", "height": 6, "radius": 3 },
+
+    "profil": { "display": "text", "size": 10.6, "lineHeight": 1.5, "colour": "$onSurfaceVar" },
+
+    "item": { "display": "row", "gap": 8, "margin": "0 0 10 0" },
+    "itemRail": { "width": 8, "gap": 3 },
+    "itemDot": { "display": "ellipse", "width": 8, "height": 8, "background": "$primary", "margin": "4 0 0 0" },
+    "itemBody": { "grow": 1 },
+    "itHead": { "display": "row", "justify": "between", "align": "start", "gap": 8 },
+    "itRole": { "display": "text", "size": 11, "weight": 700, "grow": 1 },
+    "itPeriod": {
+      "display": "text", "size": 8.7, "weight": 600, "colour": "$primary",
+      "background": "$primaryContainer", "padding": "2 8", "radius": 999
+    },
+    "itOrg": { "display": "text", "size": 10, "weight": 500, "colour": "$primary", "margin": "1 0 4 0" },
+    "itNote": { "display": "text", "size": 9.6, "italic": true, "colour": "$onSurfaceVar", "margin": "0 0 3 0" },
+
+    "bullet": { "display": "row", "gap": 7, "margin": "0 0 2.5 0" },
+    "bulletDot": { "display": "ellipse", "width": 3.5, "height": 3.5, "background": "$primary", "margin": "5 0 0 0" },
+    "bulletText": { "display": "text", "size": 9.9, "lineHeight": 1.4, "grow": 1, "colour": "$onSurfaceVar" }
+  },
+
+  "page": {
+    "style": "page",
+    "children": [
+      {
+        "style": "header",
+        "children": [
+          { "style": "avatar", "image": "{photo}" },
+          {
+            "style": "headText",
+            "children": [
+              { "style": "h1", "text": "{name}" },
+              { "style": "titleChip", "when": "role", "text": "{role}" },
+              { "style": "subtitle", "text": "{subtitleLine}" }
+            ]
+          }
+        ]
+      },
+      {
+        "style": "body",
+        "children": [
+          { "style": "colLeft", "slot": "left" },
+          { "style": "colRight", "slot": "right" }
+        ]
+      }
+    ]
+  },
+
+  "sections": {
+    "contact": {
+      "style": "card",
+      "children": [
+        { "style": "secTitle", "children": [
+          { "style": "dot" },
+          { "style": "secTitleText", "text": "{title}" }
+        ]},
+        { "repeat": "rows", "children": [
+          { "style": "contactRow", "children": [
+            { "style": "contactIcon", "icon": "{icon}" },
+            { "style": "contactText", "text": "{text}" }
+          ]}
+        ]}
+      ]
+    },
+
+    "chips": {
+      "style": "card",
+      "children": [
+        { "style": "secTitle", "children": [
+          { "style": "dot" },
+          { "style": "secTitleText", "text": "{title}" }
+        ]},
+        { "style": "lead", "when": "lead", "text": "{lead}" },
+        { "repeat": "groups", "children": [
+          { "style": "chipGroup", "children": [
+            { "style": "chipLabel", "when": "label", "text": "{label}" },
+            { "style": "chips", "children": [
+              { "repeat": "chips", "children": [
+                { "style": "chip", "text": "{text}" }
+              ]}
+            ]}
+          ]}
+        ]}
+      ]
+    },
+
+    "languages": {
+      "style": "card",
+      "children": [
+        { "style": "secTitle", "children": [
+          { "style": "dot" },
+          { "style": "secTitleText", "text": "{title}" }
+        ]},
+        { "repeat": "languages", "children": [
+          { "style": "lang", "children": [
+            { "style": "langTop", "children": [
+              { "style": "langName", "text": "{name}" },
+              { "style": "langLevel", "when": "level", "text": "{level}" }
+            ]},
+            { "style": "bar", "children": [
+              { "inline": { "extends": "barFill", "width": 0 }, "id": "gauge" }
+            ]}
+          ]}
+        ]}
+      ]
+    },
+
+    "text": {
+      "style": "card",
+      "children": [
+        { "style": "secTitle", "children": [
+          { "style": "dot" },
+          { "style": "secTitleText", "text": "{title}" }
+        ]},
+        { "style": "profil", "text": "{text}" }
+      ]
+    },
+
+    "list": {
+      "style": "card",
+      "children": [
+        { "style": "secTitle", "children": [
+          { "style": "dot" },
+          { "style": "secTitleText", "text": "{title}" }
+        ]},
+        { "repeat": "items", "children": [
+          { "style": "bullet", "children": [
+            { "style": "bulletDot" },
+            { "style": "bulletText", "text": "{.}" }
+          ]}
+        ]}
+      ]
+    },
+
+    "items": {
+      "style": "card",
+      "children": [
+        { "style": "secTitle", "children": [
+          { "style": "dot" },
+          { "style": "secTitleText", "text": "{title}" }
+        ]},
+        { "repeat": "items", "children": [
+          { "style": "item", "children": [
+            { "style": "itemRail", "children": [ { "style": "itemDot" } ] },
+            { "style": "itemBody", "children": [
+              { "style": "itHead", "children": [
+                { "style": "itRole", "text": "{role}" },
+                { "style": "itPeriod", "when": "period", "text": "{period}" }
+              ]},
+              { "style": "itOrg", "when": "org", "text": "{org}" },
+              { "repeat": "bullets", "children": [
+                { "style": "bullet", "children": [
+                  { "style": "bulletDot" },
+                  { "style": "bulletText", "text": "{.}" }
+                ]}
+              ]},
+              { "style": "itNote", "when": "note", "text": "{note}" }
+            ]}
+          ]}
+        ]}
+      ]
+    }
+  }
+}

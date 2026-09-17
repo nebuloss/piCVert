@@ -1,0 +1,11 @@
+# Built binary.
+/picvert
+
+# Rendered artefacts: regenerated from cv.json, never a source.
+*.html
+*.pdf
+*.png
+
+# Real CVs. A profile carries a name, an address and an employer; the engine's
+# default is that none of that is in the repository.
+/data/
