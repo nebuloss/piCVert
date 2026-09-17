@@ -10,6 +10,12 @@
 #
 #   picvert config     shows what the service would actually be told
 #   picvert passwd     hashes a password for the section below
+#
+# JSON works too, in this same file: YAML is a superset of it, so
+# {"listen": "0.0.0.0:3000"} parses exactly as the equivalent below. Use it if
+# the file is generated rather than written — Ansible, Nix, a shell script. It
+# is not the default because a generated file has nobody to explain itself to,
+# and the comments here are three quarters of the point.
 
 # The address the world reaches this service at, WITH its scheme.
 #

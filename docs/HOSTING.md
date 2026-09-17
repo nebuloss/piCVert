@@ -43,6 +43,20 @@ what a container cannot grant and keeps everything else. It says so when it does
 A container that *can* take the full hardening keeps it, which is why this is
 tried rather than guessed at.
 
+### Configuration
+
+`/etc/picvert.yaml`, or wherever `PICVERT_CONFIG` points. Every setting has a
+working default, so an empty file is a running service, and `picvert config`
+prints what the service would actually be told and where each part came from.
+
+The environment overrides the file, which is how a container injects a secret
+without it ever reaching a disk.
+
+**JSON is accepted in the same file** — YAML is a superset of it — which is
+worth knowing if the file is generated rather than written. The example is YAML
+because three quarters of it is the explanation of why each number is what it
+is, and JSON cannot carry that.
+
 ### The paths are not arbitrary
 
 `/opt/picvert` for the binary and `/var/lib/picvert` for the data. The unit sets
