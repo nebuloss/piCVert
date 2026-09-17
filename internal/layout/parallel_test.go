@@ -1,132 +1,144 @@
 package layout
 
 import (
-	"runtime"
 	"sync"
 	"testing"
 	"time"
 )
 
-// Can several goroutines measure text at once?
+// Can several goroutines measure text at the same time?
 //
-// # WHY THIS LIVES HERE AND NOT IN THE SERVER
+// # WHY THIS DOES NOT TIME ANYTHING
 //
-// It was tested through the HTTP layer, by timing twelve concurrent previews
-// against one. That measurement is dominated by the machine: on twelve cores it
-// came out at 2.8× one, on two cores at 7.5×, and on a shared CI runner at
-// 11.9× — which failed a threshold chosen on a twelve-core box. The number was
-// telling the truth about the runner and nothing about the lock.
+// It did, twice, and failed on CI both times. The first version timed twelve
+// HTTP requests against one; the second timed the same work spread over the
+// processors against one goroutine. Both passed on a twelve-core build host and
+// failed on a runner — the second at 1.02× where the host gave 1.6×.
 //
-// The thing actually worth protecting is one line of this package: the glyph
-// cache behind an RWMutex, so that measuring text — which every layout does
-// thousands of times — does not queue behind a single lock. Measured HERE it is
-// nearly pure CPU with no HTTP, no allocation of pages and no disk, so the
-// signal is large and the noise is small.
+// The reason is that Go reporting two processors does not mean two execution
+// units. A shared CI runner gives two contended vCPUs, and pinning two threads
+// to one core on the build host reproduces the runner's number exactly. So NO
+// threshold can tell "the lock is global" from "there is one CPU": on a machine
+// with one usable core, the correct answer and the broken answer are the same
+// number.
 //
-// # WHAT IT WOULD CATCH
+// The property worth protecting is not speed. It is that the lock ADMITS
+// READERS TOGETHER — and that is a fact about the code, testable exactly.
 //
-// A return to `sync.Mutex`, or a scratch buffer shared between goroutines
-// rather than pooled. Both are one-word changes that look harmless and make the
-// whole service serial.
+// # HOW THIS TESTS IT INSTEAD
+//
+// Hold the font table's read lock, then measure text from another goroutine.
+//
+//	sync.RWMutex   the measurement takes a read lock too, both proceed
+//	sync.Mutex     the measurement waits for a lock nobody is going to release
+//
+// Deterministic, instant, and the same answer on one processor or ninety-six.
+// The timeout exists only so a failure is a message rather than a hung suite.
 
-// The fonts come from loadTestFonts in wrap_test.go: one loader for the
-// package, so a face added there is measured here too.
-
-// measuring is a realistic amount of text: a CV's worth of lines, measured over
-// and over as the layout engine does.
-var measuring = []string{
-	"Ingénieur R&D et architecte système",
-	"Refonte de ZeeOS, l'OS Linux embarqué des clients légers",
-	"Conception d'un nouveau système de paquets pour l'OS",
-	"Secure Boot UEFI : intégration de Shim et signature",
-	"Université du Québec à Chicoutimi (UQAC)",
-}
-
-func measureAll(fonts *Fonts, times int) {
-	for i := 0; i < times; i++ {
-		for _, text := range measuring {
-			fonts.Width(text, "Roboto", 10.6, 400, false, 0)
-			fonts.Width(text, "Roboto", 10.6, 700, false, 0)
-		}
-	}
-}
-
-func TestMeasuringTextRunsInParallel(t *testing.T) {
-	cores := runtime.GOMAXPROCS(0)
-	if cores < 2 {
-		// Nothing to measure: with one processor, parallel and sequential are
-		// the same thing however the lock is written.
-		t.Skip("one processor available")
-	}
-
+func TestMeasuringAdmitsSeveralReadersAtOnce(t *testing.T) {
 	fonts := loadTestFonts(t)
-	// Warm, because the cache miss path takes a write lock legitimately and
-	// what matters is the hit path — which is every lookup after the first
-	// page of the first CV.
-	measureAll(fonts, 2)
+	// Warm, so the measurement below is a cache HIT and takes only read locks.
+	// A miss legitimately takes a write lock to store what it computed, and
+	// that is not the path being tested.
+	fonts.Width("Ingénieur", "Roboto", 10.6, Regular, false, 0)
 
-	const rounds = 400
+	// A reader, held open for the duration.
+	fonts.mu.RLock()
+	defer fonts.mu.RUnlock()
 
-	// Sequential, on one goroutine.
-	start := time.Now()
-	measureAll(fonts, rounds*cores)
-	sequential := time.Since(start)
+	done := make(chan float64, 1)
+	go func() {
+		// Takes the table's lock as every measurement does. With an RWMutex
+		// this proceeds alongside the reader above; with a Mutex it waits for
+		// a lock that is not going to be released.
+		done <- fonts.Width("Ingénieur", "Roboto", 10.6, Regular, false, 0)
+	}()
 
-	// The same total work, spread over every processor.
-	start = time.Now()
-	var wg sync.WaitGroup
-	for i := 0; i < cores; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			measureAll(fonts, rounds)
-		}()
-	}
-	wg.Wait()
-	parallel := time.Since(start)
-
-	speedup := float64(sequential) / float64(parallel)
-	t.Logf("%d processors: the same work took %v on one and %v spread out (%.1f× faster)",
-		cores, sequential.Round(time.Millisecond), parallel.Round(time.Millisecond), speedup)
-
-	// A GENEROUS floor, deliberately. Perfect scaling would be `cores`, and
-	// anything above 1.3 means the goroutines are genuinely running at the same
-	// time — which is the question. A global lock gives 1.0 or worse, and a
-	// loaded machine cannot push a parallel run BELOW the sequential one it is
-	// compared against, because both are measured under the same load.
-	const floor = 1.3
-	if speedup < floor {
-		t.Errorf("measuring text is serialised: the same work took %.1f× longer "+
-			"spread over %d processors than it did on one (%.2f× against a floor "+
-			"of %.1f). The glyph cache lock is the likely cause",
-			1/speedup, cores, speedup, floor)
+	select {
+	case width := <-done:
+		if width <= 0 {
+			t.Fatalf("measured a word as %v", width)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("measuring text blocked while another reader held the lock.\n" +
+			"The font table is behind an exclusive lock again, which makes every " +
+			"layout in the process queue behind every other — see the comment at " +
+			"the top of this file.")
 	}
 }
 
-// And the same work must produce the same answer, whoever asks.
+// The same, for the per-face caches holding the glyph widths.
 //
-// The parallel path shares a cache and pools its scratch buffers, and a buffer
-// handed to two goroutines at once would produce plausible, wrong widths rather
-// than a crash — a CV that lays out differently depending on what else the
-// service happened to be doing. Run under -race in CI, which is where a shared
-// buffer is actually caught; this checks the answers agree.
+// Two locks, because they protect different things and either could be made
+// exclusive on its own: the table says which faces exist, and each face holds
+// the advances measured from it. The second is the one every character of every
+// line goes through.
+func TestGlyphWidthsAdmitSeveralReadersAtOnce(t *testing.T) {
+	fonts := loadTestFonts(t)
+	fonts.Width("Ingénieur", "Roboto", 10.6, Regular, false, 0)
+
+	face := fonts.faceFor("Roboto", Regular, false)
+	if face == nil {
+		t.Fatal("no face loaded")
+	}
+
+	face.mu.RLock()
+	defer face.mu.RUnlock()
+
+	done := make(chan float64, 1)
+	go func() {
+		buf, release := fonts.borrow()
+		defer release()
+		done <- face.advance(buf, 'e')
+	}()
+
+	select {
+	case advance := <-done:
+		if advance <= 0 {
+			t.Fatalf("measured a glyph as %v", advance)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("reading a cached glyph width blocked while another reader held " +
+			"the cache. Measuring is serialised per face, which is the hot path " +
+			"of every layout in the service.")
+	}
+}
+
+// Each measurement gets its own scratch space.
+//
+// sfnt's contract is that a Font may be used concurrently PROVIDED each caller
+// has its own Buffer. A shared one does not crash — it produces plausible,
+// wrong widths, which is a CV that lays out differently depending on what else
+// the service happened to be doing. The race detector catches the sharing; this
+// catches the consequence, and does so without timing anything.
 func TestConcurrentMeasurementAgrees(t *testing.T) {
 	fonts := loadTestFonts(t)
 
-	want := make([]float64, len(measuring))
-	for i, text := range measuring {
-		want[i] = fonts.Width(text, "Roboto", 10.6, 400, false, 0)
+	lines := []string{
+		"Ingénieur R&D et architecte système",
+		"Refonte de ZeeOS, l'OS Linux embarqué des clients légers",
+		"Université du Québec à Chicoutimi (UQAC)",
+	}
+	want := make([]float64, len(lines))
+	for i, text := range lines {
+		want[i] = fonts.Width(text, "Roboto", 10.6, Regular, false, 0)
 	}
 
 	var wg sync.WaitGroup
-	wrong := make(chan string, 64)
+	wrong := make(chan string, 8)
 	for i := 0; i < 16; i++ {
 		wg.Add(1)
-		go func() {
+		go func(n int) {
 			defer wg.Done()
-			for round := 0; round < 50; round++ {
-				for j, text := range measuring {
-					if got := fonts.Width(text, "Roboto", 10.6, 400, false, 0); got != want[j] {
+			for round := 0; round < 100; round++ {
+				for j, text := range lines {
+					// Another weight in between, so two faces are in use at
+					// once exactly as a real layout uses them — that is what
+					// would expose a buffer shared across faces.
+					if (round+n)%2 == 0 {
+						fonts.Width(text, "Roboto", 10.6, Bold, false, 0)
+					}
+					if got := fonts.Width(text, "Roboto", 10.6, Regular, false, 0); got != want[j] {
 						select {
 						case wrong <- text:
 						default:
@@ -135,7 +147,7 @@ func TestConcurrentMeasurementAgrees(t *testing.T) {
 					}
 				}
 			}
-		}()
+		}(i)
 	}
 	wg.Wait()
 	close(wrong)

@@ -44,14 +44,21 @@ go vet ./... 2>&1 | sed 's/^/       /' && ok vet || bad vet
 go test ./... 2>&1 | grep -v 'no test files' | sed 's/^/       /'
 go test ./... > /dev/null 2>&1 && ok tests || bad tests
 
-# AND on two processors, which is what a CI runner has.
+# AND on ONE core with two threads, which is what a shared CI runner behaves
+# like — not merely GOMAXPROCS=2.
 #
-# This exists because a test passed here on twelve cores and failed on CI on
-# two: it timed concurrent work against a threshold, so it was measuring the
-# machine rather than the code. A build host with plenty of processors hides
-# every fault of that shape, and they surface only on the runner.
-GOMAXPROCS=2 go test -count=1 ./... > /dev/null 2>&1 \
-  && ok 'tests on two processors' || bad 'tests on two processors'
+# This exists because a test passed here and failed on CI twice. The build host
+# has twelve real cores and no hyperthreading, so GOMAXPROCS=2 gives it two
+# genuine execution units and a runner gives it one contended. Pinning to a
+# single core reproduces the runner's numbers exactly, where GOMAXPROCS alone
+# did not.
+if command -v taskset > /dev/null 2>&1; then
+  taskset -c 0 env GOMAXPROCS=2 go test -count=1 -timeout 300s ./... > /dev/null 2>&1 \
+    && ok 'tests on one contended core' || bad 'tests on one contended core'
+else
+  GOMAXPROCS=2 go test -count=1 ./... > /dev/null 2>&1 \
+    && ok 'tests on two processors' || bad 'tests on two processors'
+fi
 
 # And under the race detector, which is where a shared buffer or an unguarded
 # map is caught rather than merely producing a wrong answer.

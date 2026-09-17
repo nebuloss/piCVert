@@ -140,10 +140,15 @@ func TestConcurrentWritesDoNotCorrupt(t *testing.T) {
 //
 // # WHERE THE REAL CHECK LIVES NOW
 //
-// internal/layout.TestMeasuringTextRunsInParallel, which measures the one thing
-// worth protecting — the glyph cache lock — with no HTTP, no page allocation
-// and no disk in the way. Verified to fail when the global lock is put back:
-// 0.89× against 1.6× with it fixed, on both two and twelve processors.
+// internal/layout/parallel_test.go, which asserts the PROPERTY rather than the
+// speed: it holds the font table's read lock and measures text from another
+// goroutine, which proceeds under an RWMutex and blocks under a Mutex.
+//
+// That took two attempts to get right. Moving the timing here to there did not
+// help — it failed again at 1.02× on a runner, because Go reporting two
+// processors does not mean two execution units, and on one execution unit the
+// correct answer and the broken answer are the same number. Only a test of what
+// the lock ADMITS is independent of the machine.
 //
 // This is kept because the number is genuinely interesting when something is
 // slow, and because an end-to-end figure is the one a person asks for first.
