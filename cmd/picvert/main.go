@@ -31,6 +31,8 @@ func main() {
 		err = renderCmd(os.Args[2:])
 	case "fit":
 		err = fitCmd(os.Args[2:])
+	case "preview":
+		err = previewCmd(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -53,6 +55,9 @@ func usage() {
 
   picvert fit --profile <dir> [--lang xx]
         Reports whether it holds on one page, and what is left over.
+
+  picvert preview --profile <dir> [--addr host:port]
+        Serves the CV, laid out again on every reload. /fit reports the fit.
 
 Environment:
   PICVERT_HOME    where templates/ and fonts/ live (default: alongside the binary)
@@ -192,8 +197,7 @@ func renderCmd(args []string) error {
 		return err
 	}
 	root, _ := home()
-	page, err := layout.Document(p.Render, p.Template.FontDecls(), p.Template.Dir,
-		filepath.Join(root, "fonts"), documentTitle(*profileDir, *lang))
+	page, err := Document(p, root, documentTitle(*profileDir, *lang))
 	if err != nil {
 		return err
 	}
@@ -202,6 +206,13 @@ func renderCmd(args []string) error {
 		return nil
 	}
 	return os.WriteFile(*out, []byte(page), 0o644)
+}
+
+// Document wraps a laid-out page into a standalone file. Here rather than
+// inlined at each call site so the two commands cannot assemble it differently.
+func Document(p *prepared, root, title string) (string, error) {
+	return layout.Document(p.Render, p.Template.FontDecls(), p.Template.Dir,
+		filepath.Join(root, "fonts"), title)
 }
 
 func documentTitle(profileDir, lang string) string {

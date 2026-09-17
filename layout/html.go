@@ -1,0 +1,216 @@
+package layout
+
+import (
+	"fmt"
+	"html"
+	"math"
+	"strconv"
+	"strings"
+)
+
+// HTMLPainter writes a laid-out tree as HTML.
+//
+// # WHY EVERY LINE IS PLACED
+//
+// The obvious emitter would write paragraphs and let the browser wrap them.
+// That is what the previous engine did, and it is exactly what broke: the
+// browser reached a different number of lines from the PDF renderer, the two
+// answers differed by about a line per block, and a CV that measured as fitting
+// came out cut off.
+//
+// So the browser is given nothing to decide. Each line the engine broke becomes
+// its own run, placed at the baseline it was measured for. Whatever the browser
+// would have done with the paragraph is irrelevant, because it never sees one.
+//
+// The usual objection to pre-broken text — that it cannot reflow — does not
+// apply: the page is a fixed box with `overflow:hidden`. It never reflows. This
+// is the rare layout where baking the lines in is not a compromise.
+//
+// Text stays selectable and reads in order, because the runs are emitted in
+// reading order and each holds real text.
+type HTMLPainter struct {
+	b strings.Builder
+	// origin is the content corner of the enclosing box. CSS positions an
+	// absolute child against its positioned ancestor, so the absolute figures
+	// the engine computed have to be made relative on the way out — and this is
+	// the only place that knows which ancestor that is.
+	origin point
+}
+
+type point struct{ x, y float64 }
+
+// RenderHTML paints a page and returns its markup.
+func RenderHTML(r *Render) string {
+	p := &HTMLPainter{}
+	fmt.Fprintf(&p.b,
+		`<div class="page" style="position:relative;width:%spx;height:%spx;overflow:hidden">`,
+		num(r.Width), num(r.Height))
+	p.origin = point{r.Frame.X, r.Frame.Y}
+	for _, child := range r.Frame.Children {
+		child.Paint(p)
+	}
+	p.b.WriteString(`</div>`)
+	return p.b.String()
+}
+
+// num prints a length the way CSS wants it: short, and without a trailing `.0`
+// that would make two identical numbers look different in a diff.
+func num(v float64) string {
+	return strconv.FormatFloat(math.Round(v*100)/100, 'f', -1, 64)
+}
+
+// frame writes the geometry and paint every node shape shares.
+func (p *HTMLPainter) frame(f *Frame) string {
+	s := f.Style
+	var style strings.Builder
+	fmt.Fprintf(&style, "position:absolute;left:%spx;top:%spx;width:%spx;height:%spx",
+		num(f.X-p.origin.x), num(f.Y-p.origin.y), num(f.Width), num(f.Height))
+
+	if s.Display == Ellipse {
+		style.WriteString(";border-radius:50%")
+	} else if s.Radius > 0 {
+		fmt.Fprintf(&style, ";border-radius:%spx", num(s.Radius))
+	}
+	if s.Clip {
+		style.WriteString(";overflow:hidden")
+	}
+	if s.Border.Width > 0 {
+		fmt.Fprintf(&style, ";box-sizing:border-box;border:%spx solid %s",
+			num(s.Border.Width), s.Border.Colour)
+	}
+	if bg := cssBackground(s.Background); bg != "" {
+		fmt.Fprintf(&style, ";background:%s", bg)
+	}
+	return style.String()
+}
+
+func cssBackground(fill Fill) string {
+	if fill.Gradient != nil {
+		stops := make([]string, 0, len(fill.Gradient.Stops))
+		for _, st := range fill.Gradient.Stops {
+			stops = append(stops, fmt.Sprintf("%s %s%%", st.Colour, num(st.At*100)))
+		}
+		return fmt.Sprintf("linear-gradient(%sdeg,%s)",
+			num(fill.Gradient.Angle), strings.Join(stops, ","))
+	}
+	return fill.Colour
+}
+
+// Box opens a container, paints what is inside it, and closes it.
+//
+// WHY THE ORIGIN IS THE BOX'S CORNER AND NOT ITS CONTENT CORNER. An absolutely
+// positioned child is placed against its ancestor's PADDING BOX — CSS does not
+// move it in by the padding, the way normal flow does. So writing a child's
+// offset relative to the content corner subtracted the padding that CSS was
+// never going to add back, and every card drew its contents hard against its
+// own edge: cancelled exactly, on every nested box, which is why it looked like
+// the padding had simply been forgotten rather than counted twice.
+//
+// The engine already placed the child correctly, inside the padding. The
+// painter's only job is to express that same position relative to the box CSS
+// will measure it from.
+func (p *HTMLPainter) Box(f *Frame, in func()) {
+	fmt.Fprintf(&p.b, `<div style="%s">`, p.frame(f))
+	// Saved and restored rather than recomputed on the way out, so a change
+	// here cannot leave the origin pointing at the wrong ancestor.
+	saved := p.origin
+	p.origin = point{f.X, f.Y}
+	in()
+	p.origin = saved
+	p.b.WriteString(`</div>`)
+}
+
+// Image paints a picture, or an inline glyph.
+//
+// Icons travel as `icon:<viewBox>|<path>` rather than as files, because the
+// page is a single self-contained document: a request for an icon would be a
+// request the promise of opening offline does not allow.
+func (p *HTMLPainter) Image(f *Frame) {
+	style := p.frame(f)
+	src := f.Node.Src
+
+	if spec, ok := strings.CutPrefix(src, "icon:"); ok {
+		viewBox, path, _ := strings.Cut(spec, "|")
+		fmt.Fprintf(&p.b,
+			`<div style="%s"><svg viewBox="%s" style="width:100%%;height:100%%;display:block">`+
+				`<path d="%s" fill="%s"/></svg></div>`,
+			style, html.EscapeString(viewBox), html.EscapeString(path),
+			orElse(f.Style.Colour, "currentColor"))
+		return
+	}
+	if src == "" {
+		fmt.Fprintf(&p.b, `<div style="%s"></div>`, style)
+		return
+	}
+	fmt.Fprintf(&p.b, `<img src="%s" alt="%s" style="%s;object-fit:cover;display:block">`,
+		html.EscapeString(src), html.EscapeString(f.Node.Alt), style)
+}
+
+func orElse(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+// Text places each measured line at its own baseline.
+//
+// `white-space:pre` because the spacing inside a line was already measured:
+// letting the browser collapse runs of spaces would move text away from where
+// it was measured to be. The line cannot wrap — it is one line by construction
+// — so `pre` costs nothing and removes a decision.
+//
+// The baseline is a transform on a zero-height box rather than a `top`, so the
+// text sits exactly where it was measured regardless of the font's own line
+// box, which differs between browsers and would otherwise put back the drift
+// this engine exists to remove.
+func (p *HTMLPainter) Text(f *Frame) {
+	s := f.Style
+	fmt.Fprintf(&p.b, `<div style="%s">`, p.frame(f))
+
+	base := fmt.Sprintf("font-size:%spx", num(s.Size))
+	if s.Family != "" {
+		// An empty family is invalid CSS and silently voids the whole
+		// declaration, taking the size with it.
+		base = fmt.Sprintf("font-family:'%s';%s", s.Family, base)
+	}
+	if s.Letter != 0 {
+		base += fmt.Sprintf(";letter-spacing:%spx", num(s.Letter))
+	}
+	if s.Italic {
+		base += ";font-style:italic"
+	}
+
+	// Each line sits in a box of exactly one line's height, placed at that
+	// line's top, and the text inside it is pushed down to the baseline.
+	//
+	// The baseline used to be a transform on a zero-height box at the top of
+	// the paragraph. It DRAWS in the right place — a transform moves the ink —
+	// but the box keeps its declared geometry, so every line's rectangle
+	// covered the whole paragraph and then some. Nothing looked wrong; what
+	// broke was everything that asks the page where its text is. Selecting a
+	// line selected its neighbours, and an overlap check could not tell a real
+	// collision from this one.
+	//
+	// The ink lands where it did. The difference is that the geometry now says
+	// so.
+	lh := s.Size * s.LineHeightOr()
+	for i, line := range f.Lines {
+		fmt.Fprintf(&p.b,
+			`<div style="position:absolute;left:0;top:%spx;width:%spx;height:%spx;`+
+				`line-height:%spx;white-space:pre;%s">`,
+			num(float64(i)*lh), num(line.Width), num(lh), num(lh), base)
+		for _, piece := range line.Pieces {
+			fmt.Fprintf(&p.b, `<span style="font-weight:%d;color:%s">%s</span>`,
+				int(s.WeightOf(piece.Bold)), orElse(piece.Colour, s.Colour),
+				html.EscapeString(piece.Text))
+		}
+		p.b.WriteString(`</div>`)
+	}
+	p.b.WriteString(`</div>`)
+}
+
+// `line-height` set to the measured line height is what puts the baseline back
+// where the engine computed it: a CSS line box centres its text in that height,
+// which is the same rule the engine used to place the baseline. So the two
+// agree without the painter having to know the font's metrics.
