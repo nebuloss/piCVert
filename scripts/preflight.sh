@@ -44,6 +44,20 @@ go vet ./... 2>&1 | sed 's/^/       /' && ok vet || bad vet
 go test ./... 2>&1 | grep -v 'no test files' | sed 's/^/       /'
 go test ./... > /dev/null 2>&1 && ok tests || bad tests
 
+# AND on two processors, which is what a CI runner has.
+#
+# This exists because a test passed here on twelve cores and failed on CI on
+# two: it timed concurrent work against a threshold, so it was measuring the
+# machine rather than the code. A build host with plenty of processors hides
+# every fault of that shape, and they surface only on the runner.
+GOMAXPROCS=2 go test -count=1 ./... > /dev/null 2>&1 \
+  && ok 'tests on two processors' || bad 'tests on two processors'
+
+# And under the race detector, which is where a shared buffer or an unguarded
+# map is caught rather than merely producing a wrong answer.
+go test -race ./internal/layout/ ./internal/lease/ > /dev/null 2>&1 \
+  && ok 'race detector' || bad 'race detector'
+
 echo "› interface"
 npm ci --silent --no-audit --no-fund > /dev/null 2>&1
 npx tsc -p tsconfig.json --noEmit 2>&1 | sed 's/^/       /' && ok typecheck || bad typecheck
