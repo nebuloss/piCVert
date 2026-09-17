@@ -30,6 +30,19 @@ RestartSec=3
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
+
+# A CV is private, so anything this writes is private too. The store already
+# creates its files 0600, and this is the belt to that pair of braces: a future
+# write that forgets is still not world-readable.
+UMask=0077
+
+# It holds no capabilities at all. A web service that reads and writes one
+# directory needs none, and saying so explicitly is stronger than the handful
+# of individual restrictions it replaces.
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelLogs=yes
+RemoveIPC=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/var/lib/picvert

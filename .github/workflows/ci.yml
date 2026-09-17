@@ -70,11 +70,15 @@ jobs:
           windows amd64
           TARGETS
 
-      # Advisory: a style nit in the installer should surface, not block a
-      # merge. Its correctness is covered by `bash -n` below.
+      # The installer is POSIX sh, not bash: a minimal container often has
+      # neither bash nor a reason to install one. `sh -n` is the part that must
+      # pass; shellcheck is advisory, because a style nit in the installer
+      # should surface rather than block a merge.
+      - name: Check the installer
+        run: sh -n deploy/install.sh
+
       - name: Shellcheck the installer
         continue-on-error: true
         run: |
-          bash -n deploy/install.sh
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck deploy/install.sh
+          shellcheck -s sh deploy/install.sh

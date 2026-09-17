@@ -6,11 +6,60 @@ templates, the fonts and the whole interface are compiled into it.
 
 ## Install
 
-```bash
-git clone https://github.com/nebuloss/piCVert && cd piCVert
-sudo ./deploy/install.sh
-sudo editor /etc/picvert.env          # at least PICVERT_PUBLIC_URL
+On the machine that will run it — a VM, a Pi, an LXC container:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nebuloss/piCVert/main/deploy/install.sh | sh
 ```
+
+It works out the architecture, downloads the released binary, **checks it
+against the published digest**, and installs it as a systemd service. Nothing is
+compiled and no toolchain is needed: the templates, the fonts and the whole
+interface are inside the one file it fetches.
+
+Then:
+
+```sh
+editor /etc/picvert.env          # at least PICVERT_PUBLIC_URL
+picvert new --slug jean --name "Jean Dupont"
+```
+
+Run the same command again to upgrade. It never touches `/etc/picvert.env` or
+the data directory once they exist, so an upgrade cannot take your configuration
+or your CVs with it.
+
+### In an LXC container
+
+The same command. One thing is worth knowing: the service unit asks the kernel
+for a private `/dev` and a read-only `/proc/sys`, and an **unprivileged**
+container will not get them — systemd then fails the service with
+`226/NAMESPACE`, which names nothing you can act on and looks exactly like a
+broken binary.
+
+The installer tries the hardened unit first and, only if it fails that way,
+drops in `/etc/systemd/system/picvert.service.d/container.conf`, which turns off
+what a container cannot grant and keeps everything else. It says so when it does.
+
+A container that *can* take the full hardening keeps it, which is why this is
+tried rather than guessed at.
+
+### The paths are not arbitrary
+
+`/opt/picvert` for the binary and `/var/lib/picvert` for the data. The unit sets
+`PrivateTmp` and `ProtectHome`, so a data directory under `/tmp`, `/var/tmp` or
+`/home` **cannot work** — the service gets its own empty `/tmp` and no `/home` at
+all. Both failures name a missing file rather than a sandbox, which is a bad
+half-hour if you have moved the paths.
+
+### Building it instead
+
+```sh
+git clone https://github.com/nebuloss/piCVert && cd piCVert
+go build -o /opt/picvert/picvert ./cmd/picvert
+```
+
+That is the whole build — the interface is compiled by esbuild, which is written
+in Go. Then take the unit and the environment example from `deploy/`.
 
 Then put a proxy in front of the **public port only**
 (`deploy/nginx-picvert.conf`), and make the first CV:
@@ -89,6 +138,20 @@ So it is not destroyed. The directory is moved to `data/.trash/` and erased
 after `PICVERT_TRASH_HOURS` (24 by default). Until then the admin page puts it
 back exactly as it was. The sweep happens when the admin page is opened, rather
 than on a timer, because a timer that stops is a timer nobody notices.
+
+## How locked down it is
+
+```
+systemd-analyze security picvert.service   →  1.8 OK
+```
+
+No capabilities at all (`CapabilityBoundingSet=`), a system call allow-list,
+no writable-executable memory, a read-only filesystem apart from one directory,
+and `UMask=0077` so anything it writes is private even if the code that writes
+it forgets.
+
+Verified running under exactly that: zero effective capabilities, seccomp in
+filter mode, and a CV rendered to PDF through it.
 
 ## Resources
 

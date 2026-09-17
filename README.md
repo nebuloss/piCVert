@@ -196,10 +196,14 @@ of them looks fine.
 
 ## A service, not just a renderer
 
-```bash
-sudo ./deploy/install.sh        # builds, installs, starts
+```sh
+curl -fsSL https://raw.githubusercontent.com/nebuloss/piCVert/main/deploy/install.sh | sh
 picvert new --slug jean --name "Jean Dupont"
 ```
+
+One static binary, checked against its published digest. Nothing is compiled on
+the host and no toolchain is needed — the templates, the fonts and the interface
+are inside it.
 
 ```
 :3000  the CVs, the private links, the editor

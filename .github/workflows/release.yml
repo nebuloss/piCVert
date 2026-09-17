@@ -69,7 +69,11 @@ jobs:
       # the proxy site and the installer. Not the templates or the fonts —
       # those are inside the binary, which is the whole point.
       - name: Package the deployment files
-        run: tar -czf dist/picvert-deploy.tar.gz deploy/ docs/HOSTING.md
+        run: |
+          tar -czf dist/picvert-deploy.tar.gz deploy/ docs/HOSTING.md
+          # Also on its own, so the one-line install can fetch it from the
+          # release rather than from a branch that may have moved on.
+          cp deploy/install.sh dist/install.sh
 
       # The installer fetches an executable over the network and runs it as
       # root. Publishing the digests lets somebody check that what arrived is
