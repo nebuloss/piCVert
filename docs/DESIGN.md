@@ -112,6 +112,31 @@ glance, and makes a property set on the wrong kind *ignored* rather than
 subclass quietly add a property one emitter knows about and the other does not —
 exactly the divergence this engine exists to remove.
 
+### JSON for the configuration file
+
+Considered, and rejected on a measurement rather than a preference. Recorded so
+that the next person to notice the dependency does not have to repeat the work.
+
+`gopkg.in/yaml.v3` costs **372 kB** in an 11 MB binary, and its last release was
+in 2022 — effectively frozen, where `encoding/json` is maintained with the
+language. Both are real arguments for dropping it.
+
+Against them: the example configuration is 126 lines, of which **82 are
+comments and 24 are settings**. Three quarters of it is the explanation of why
+each number is what it is — and that was the whole argument for having a file
+instead of environment variables. JSON cannot carry a comment, so switching
+would delete the reason the file exists and leave a worse version of what it
+replaced.
+
+The frozen parser matters less than it looks. It reads **one local file written
+by the administrator**, at startup, never network input. A frozen parser on
+trusted input is a different proposition from a frozen parser handling
+requests; if this parsed CVs the answer would be the other way round.
+
+And the choice turned out to be false anyway: YAML 1.2 is a superset of JSON,
+so a generated configuration can be written as JSON in the same file and parses
+identically. Nothing is given up by keeping YAML as the example.
+
 ### Abstract factories, DI containers
 
 Dependencies are passed to constructors and defaulted. `Engine` takes `Fonts`,

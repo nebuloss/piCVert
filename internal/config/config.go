@@ -20,6 +20,20 @@
 // Things that CHANGE — the links, the leases, the CVs — live in the data
 // directory, and nothing there is hand-edited.
 //
+// # WHY YAML, GIVEN IT IS THE ONLY PARSER THIS PROJECT LINKS
+//
+// Because three quarters of the example file is comments, and that is the whole
+// argument for having a file rather than environment variables: somewhere to
+// write down why a number is what it is. JSON cannot carry one.
+//
+// It costs 372 kB in an 11 MB binary and the library has not been released
+// since 2022 — both measured, both real, and both outweighed by the fact that
+// this reads one local file written by the administrator at startup and never
+// touches network input.
+//
+// JSON works here regardless: YAML 1.2 is a superset of it, so a generated
+// configuration can be written as JSON in this same file.
+//
 // # THE ENVIRONMENT STILL WINS
 //
 // A container is configured by environment, and telling somebody to bake a file
