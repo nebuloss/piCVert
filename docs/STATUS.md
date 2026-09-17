@@ -51,10 +51,10 @@ verified on a build host over SSH.
 but nothing yet reads it back out, and there is no bundle format for a CV plus
 its portrait.
 
-**Anything self-service.** There is no route that creates a CV: profiles are
-directories someone puts there. A public service taking new CVs from strangers
-needs a quota, a rate limit per address and a challenge, and none of that is
-written.
+**Anything self-service.** A CV is created from the admin port or the command
+line. A public creation route needs a quota, a per-address limit and a
+challenge before it is safe to expose, and none of that is written — so it is
+not exposed.
 
 **Arcs in SVG icon paths.** The translator handles move, line, cubic and close —
 what a material icon is made of. An icon set using `A` would draw nothing rather

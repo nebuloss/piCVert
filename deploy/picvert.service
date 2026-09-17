@@ -1,0 +1,59 @@
+# piCVert — the CV engine.
+#
+# Install to /etc/systemd/system/picvert.service (deploy/install.sh does it).
+
+[Unit]
+Description=piCVert — a CV engine that lays the page out once
+Documentation=https://github.com/nebuloss/piCVert
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=picvert
+Group=picvert
+WorkingDirectory=/opt/picvert
+EnvironmentFile=/etc/picvert.env
+
+# One binary. The templates, the fonts and the whole interface are inside it,
+# so there is nothing beside it to forget to deploy — which is the failure that
+# looks like a broken editor rather than a missing folder.
+ExecStart=/opt/picvert/picvert serve
+
+Restart=on-failure
+RestartSec=3
+
+# --- hardening ------------------------------------------------------------
+#
+# The service reads a directory of CVs and writes to it. That is all it needs,
+# and everything below says so to the kernel rather than to a reader.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/picvert
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Only the two families a web service needs. Nothing here dials out.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# The engine holds one page's layout and the fonts it measured with. Measured
+# at rest it sits well under this; the ceiling is here so a pathological
+# document is a failed request rather than a dead host.
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

@@ -176,10 +176,14 @@ of them looks fine.
 
 ## A service, not just a renderer
 
+```bash
+sudo ./deploy/install.sh        # builds, installs, starts
+picvert new --slug jean --name "Jean Dupont"
 ```
-./picvert serve
-  :3000  the CVs, and the private links
-  :3001  administration
+
+```
+:3000  the CVs, the private links, the editor
+:3001  administration â€” no access control, never proxied
 ```
 
 Nothing is readable at a guessable address unless it is named in
@@ -267,6 +271,7 @@ conformance kit, mobile scaling, per-column spacing, and the service around it â
 viewer, private links, editor, journal, administration.
 
 Known gaps and deliberate differences: [`docs/STATUS.md`](docs/STATUS.md).
+Deploying it: [`docs/HOSTING.md`](docs/HOSTING.md).
 
 ## Licence
 
