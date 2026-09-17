@@ -46,7 +46,11 @@ func Document(r *Render, fonts []FontDecl, templateDir, sharedDir, title string)
 	// Nothing inherited from a browser default: every position, size and colour
 	// on the page was computed, and a user-agent margin would move all of them.
 	b.WriteString("*{margin:0;padding:0;box-sizing:content-box}\n")
-	b.WriteString("html,body{color-scheme:only light;background:#fff}\n")
+	// `height:auto` on html as well as body. Left to itself html fills the
+	// viewport, so on a phone — where the scaled sheet is half the screen tall
+	// — the document went on scrolling into a screenful of blank white below
+	// the CV. The sheet decides how tall the page is; nothing else should.
+	b.WriteString("html,body{color-scheme:only light;background:#fff;height:auto}\n")
 	b.WriteString(responsive(r.Width, r.Height))
 	b.WriteString("</style>\n</head>\n<body>\n")
 	// The page is wrapped rather than altered: what is inside keeps the exact
@@ -143,10 +147,14 @@ func responsive(width, height float64) string {
 
 	scaled := func(w float64) string {
 		s := w / width
-		// The body must reserve the SCALED height: a transform moves pixels
-		// without changing how much room the element claims, so the page would
-		// otherwise leave a screen's worth of blank space below it.
-		return fmt.Sprintf(".sheet{transform:scale(%.4f)}body{height:%.0fpx}", s, height*s)
+		// The SHEET reserves the scaled height, not the body: a transform moves
+		// pixels without changing how much room the element claims, so
+		// something has to declare the space the shrunk page actually occupies.
+		//
+		// Putting it on the body was nearly right and quietly wrong — a fixed
+		// body height cannot shrink below the viewport, so on a phone the
+		// document still scrolled a full screen past the end of the CV.
+		return fmt.Sprintf(".sheet{transform:scale(%.4f);height:%.0fpx}", s, height*s)
 	}
 
 	for w := float64(floor); w < width; w += step {
@@ -159,7 +167,7 @@ func responsive(width, height float64) string {
 	fmt.Fprintf(&b, "@media (max-width:%dpx){%s}\n", floor-1, scaled(floor-1))
 
 	// Printing must not scale: a sheet of paper is already the right size.
-	b.WriteString("@media print{.sheet{transform:none}body{height:auto}}\n")
+	b.WriteString("@media print{.sheet{transform:none;height:auto}}\n")
 	return b.String()
 }
 

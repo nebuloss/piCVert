@@ -244,3 +244,36 @@ func TestShrinkingDoesNotRebreakTheText(t *testing.T) {
 		}
 	}
 }
+
+// The scaled sheet must reserve exactly the room it occupies.
+//
+// A transform moves pixels without changing how much space an element claims,
+// so something has to declare the height a shrunk page actually takes. Putting
+// it on the BODY was nearly right and quietly wrong: a fixed body height cannot
+// shrink below the viewport, so on a phone — where the sheet is half the screen
+// tall — the document went on scrolling into a screenful of blank white beneath
+// the CV.
+func TestScaledSheetReservesItsOwnHeight(t *testing.T) {
+	css := responsive(794, 1123)
+
+	// Every step sizes the sheet, not the body.
+	if strings.Contains(css, "body{height:") {
+		t.Errorf("the body is being given a fixed height; it cannot shrink below "+
+			"the viewport and will leave blank space under the page:\n%s", firstLines(css, 3))
+	}
+	if !strings.Contains(css, ".sheet{transform:scale(") || !strings.Contains(css, ";height:") {
+		t.Errorf("the sheet does not reserve its scaled height:\n%s", firstLines(css, 3))
+	}
+	// And printing undoes both: a sheet of paper is already the right size.
+	if !strings.Contains(css, "@media print{.sheet{transform:none;height:auto}}") {
+		t.Errorf("printing must not scale the page:\n%s", css[len(css)-120:])
+	}
+}
+
+func firstLines(s string, n int) string {
+	lines := strings.SplitN(s, "\n", n+1)
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return strings.Join(lines, "\n")
+}
