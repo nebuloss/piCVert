@@ -73,8 +73,11 @@ func num(v float64) string {
 }
 
 // frame writes the geometry and paint every node shape shares.
-func (p *HTMLPainter) frame(f *Frame) string {
-	s := f.Style
+func (p *HTMLPainter) frame(f *Frame) string { return p.frameOf(f, f.Style) }
+
+// frameOf is frame, with the style to use stated — for a painter that needs to
+// draw the box differently from what the node asked for.
+func (p *HTMLPainter) frameOf(f *Frame, s Style) string {
 	var style strings.Builder
 	if p.class != "" {
 		// The page itself: `relative`, so it is the box every absolute
@@ -180,6 +183,75 @@ func orElse(v, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+// Shape paints a regular polygon inscribed in the node's box.
+//
+// An inline SVG rather than a CSS `clip-path`: the polygon has to be drawn the
+// same way by the PDF emitter, and a path of points is something both can
+// consume. A clip-path would be a CSS-only description, and the two renderings
+// would then have one more thing to disagree about.
+func (p *HTMLPainter) Shape(f *Frame) {
+	s := f.Style
+	// The colour belongs to the POLYGON, not to the box holding it. Left on the
+	// box it painted a solid rectangle behind the shape, which then filled its
+	// own outline invisibly — six correct points drawing as a square, and
+	// looking for all the world like the geometry was wrong.
+	box := s
+	box.Background = Fill{}
+	style := p.frameOf(f, box)
+	if s.Opacity > 0 {
+		style += fmt.Sprintf(";opacity:%s", num(s.Opacity))
+	}
+	fmt.Fprintf(&p.b,
+		`<div style="%s"><svg viewBox="0 0 100 100" preserveAspectRatio="none" `+
+			`style="width:100%%;height:100%%;display:block">`+
+			`<polygon points="%s" fill="%s"/></svg></div>`,
+		style, polygonPoints(s.Sides, s.Rotate), orElse(s.Background.Colour, "currentColor"))
+}
+
+// polygonPoints is a regular polygon inscribed in a 100x100 box.
+//
+// In the SVG's own coordinates rather than in pixels, so neither emitter has to
+// recompute the shape when a theme resizes the node.
+//
+// THE VIEWBOX IS SQUARE AND THE BOX USUALLY IS NOT, which is the whole
+// difficulty. Stretched to fill a 54x62 box with `preserveAspectRatio="none"`,
+// a hexagon's six points land on the corners of its bounding box and it draws
+// as a rectangle — which is exactly what happened, and looked like the polygon
+// code being wrong rather than the scaling.
+//
+// So the points are normalised to touch the edges of the viewBox in both axes:
+// the caller gives the box the aspect ratio the shape should have (a hexagon
+// standing on a point is about 1:1.155), and the shape then fills it honestly.
+func polygonPoints(sides int, rotate float64) string {
+	if sides < 3 {
+		sides = 6
+	}
+	xs := make([]float64, sides)
+	ys := make([]float64, sides)
+	minX, maxX := math.Inf(1), math.Inf(-1)
+	minY, maxY := math.Inf(1), math.Inf(-1)
+	for i := 0; i < sides; i++ {
+		// Start at the top: the orientation anyone drawing one by hand would
+		// choose, rather than the one the maths gives.
+		angle := (float64(i)/float64(sides))*2*math.Pi - math.Pi/2 + rotate*math.Pi/180
+		xs[i] = math.Cos(angle)
+		ys[i] = math.Sin(angle)
+		minX, maxX = math.Min(minX, xs[i]), math.Max(maxX, xs[i])
+		minY, maxY = math.Min(minY, ys[i]), math.Max(maxY, ys[i])
+	}
+
+	var b strings.Builder
+	for i := 0; i < sides; i++ {
+		x := (xs[i] - minX) / (maxX - minX) * 100
+		y := (ys[i] - minY) / (maxY - minY) * 100
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		fmt.Fprintf(&b, "%s,%s", num(x), num(y))
+	}
+	return b.String()
 }
 
 // Text places each measured line at its own baseline.

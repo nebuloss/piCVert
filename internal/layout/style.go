@@ -55,6 +55,15 @@ const (
 	// node means the layout engine knows it is there, and the two emitters draw
 	// the same one.
 	Ellipse
+	// Polygon draws a filled regular polygon inscribed in the node's box: a
+	// hexagon, a triangle, a diamond.
+	//
+	// GENERAL RATHER THAN A HEXAGON, because a kind that could only be six
+	// sides would be a kind the next theme has to work around — and the cost of
+	// the general case is one integer and a loop. It is ornament: it holds no
+	// text and takes part in layout only by occupying its box, so a renderer
+	// that cannot draw one loses decoration, never an arrangement.
+	Polygon
 )
 
 // Align is cross-axis placement.
@@ -174,6 +183,16 @@ type Style struct {
 		Width  float64
 		Colour string
 	}
+	// Sides is how many a Polygon has, and Rotate turns it, in degrees.
+	//
+	// A hexagon standing on a point is `6` and `30` — the orientation everyone
+	// means by a hexagon, and not the one the maths gives by default.
+	Sides  int
+	Rotate float64
+	// Opacity fades a node, 0 to 1. Zero means opaque, so a style that says
+	// nothing is drawn normally.
+	Opacity float64
+
 	// Shadow is ornament: a soft drop shadow under a box.
 	//
 	// THE ONE PROPERTY A RENDERER MAY IGNORE, and it is here because the design

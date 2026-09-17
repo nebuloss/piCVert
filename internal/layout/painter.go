@@ -33,6 +33,8 @@ type Painter interface {
 	Text(f *Frame)
 	// Image paints a picture or an inline glyph.
 	Image(f *Frame)
+	// Shape paints a polygon: ornament with no content.
+	Shape(f *Frame)
 }
 
 // Paint walks the tree, handing each frame to the painter.
@@ -48,6 +50,8 @@ func (f *Frame) Paint(p Painter) {
 		p.Text(f)
 	case Image:
 		p.Image(f)
+	case Polygon:
+		p.Shape(f)
 	default:
 		p.Box(f, func() {
 			for _, child := range f.Children {

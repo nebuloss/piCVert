@@ -41,6 +41,7 @@ var layouters = map[Display]Layouter{
 	Text:    textLayout{},
 	Image:   leafLayout{},
 	Ellipse: leafLayout{},
+	Polygon: leafLayout{},
 }
 
 // box is the geometry every layouter needs: what the node's own padding and

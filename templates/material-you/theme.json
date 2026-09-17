@@ -293,6 +293,44 @@
       "lineHeight": 1.4,
       "grow": 1,
       "colour": "$onSurfaceVar"
+    },
+    "headerOrnament": {
+      "display": "row",
+      "grow": 1,
+      "align": "center",
+      "justify": "between",
+      "gap": 10
+    },
+    "hexLarge": {
+      "display": "polygon",
+      "sides": 6,
+      "rotate": 30,
+      "width": 54,
+      "height": 62,
+      "background": "$primary",
+      "opacity": 0.13
+    },
+    "hexMedium": {
+      "display": "polygon",
+      "sides": 6,
+      "rotate": 30,
+      "width": 34,
+      "height": 39,
+      "background": "$primary",
+      "opacity": 0.1,
+      "self": "start",
+      "margin": "16 0 0 0"
+    },
+    "hexSmall": {
+      "display": "polygon",
+      "sides": 6,
+      "rotate": 30,
+      "width": 22,
+      "height": 25,
+      "background": "$primary",
+      "opacity": 0.16,
+      "self": "end",
+      "margin": "0 0 18 0"
     }
   },
   "page": {
@@ -320,6 +358,20 @@
               {
                 "style": "subtitle",
                 "text": "{subtitleLine}"
+              }
+            ]
+          },
+          {
+            "style": "headerOrnament",
+            "children": [
+              {
+                "style": "hexSmall"
+              },
+              {
+                "style": "hexLarge"
+              },
+              {
+                "style": "hexMedium"
               }
             ]
           }

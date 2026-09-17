@@ -100,6 +100,9 @@ type RawStyle struct {
 	Radius     float64 `json:"radius,omitempty"`
 	Border     string  `json:"border,omitempty"` // "1.5 $outline"
 	Shadow     string  `json:"shadow,omitempty"` // "0 5 16 rgba(11,87,208,.30)"
+	Sides      int     `json:"sides,omitempty"`
+	Rotate     float64 `json:"rotate,omitempty"`
+	Opacity    float64 `json:"opacity,omitempty"`
 	Clip       bool    `json:"clip,omitempty"`
 
 	Family     string  `json:"family,omitempty"`
@@ -223,6 +226,7 @@ var displays = map[string]layout.Display{
 	"text":     layout.Text,
 	"image":    layout.Image,
 	"ellipse":  layout.Ellipse,
+	"polygon":  layout.Polygon,
 }
 
 var aligns = map[string]layout.Align{
@@ -349,6 +353,15 @@ func (t *Theme) Resolve(r RawStyle) (layout.Style, error) {
 			return s, fmt.Errorf("shadow: %w", err)
 		}
 		s.Shadow = &layout.Shadow{X: nums[0], Y: nums[1], Blur: nums[2], Colour: c}
+	}
+	if r.Sides != 0 {
+		s.Sides = r.Sides
+	}
+	if r.Rotate != 0 {
+		s.Rotate = r.Rotate
+	}
+	if r.Opacity != 0 {
+		s.Opacity = r.Opacity
 	}
 	if r.Clip {
 		s.Clip = true
