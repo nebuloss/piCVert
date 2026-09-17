@@ -95,6 +95,19 @@ const (
 	Bold    Weight = 700
 )
 
+// OrRegular is the weight to write down, for a style that never named one.
+//
+// Zero is not a weight. Written into CSS it is invalid, so the browser drops
+// the declaration and picks its own — which was happening on most of the text
+// on the page, silently, because a style with no weight of its own and no
+// ancestor to inherit one from kept the zero value.
+func (w Weight) OrRegular() Weight {
+	if w == 0 {
+		return Regular
+	}
+	return w
+}
+
 // Fill is what paints a surface: a flat colour, or a gradient.
 type Fill struct {
 	// Colour is `#rrggbb`. Empty means nothing is painted.

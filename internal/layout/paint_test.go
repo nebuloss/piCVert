@@ -142,3 +142,61 @@ func TestPageKeepsItsSizeWhateverItHolds(t *testing.T) {
 		t.Error("a 4000px block must be reported as overflowing")
 	}
 }
+
+// A text frame's own padding must reach its lines.
+//
+// A chip is a box with padding and a rounded edge, and its text was written
+// from the box corner rather than the content corner — so it sat hard against
+// the top with all the slack below it. Measured on a real CV, every chip was
+// 6px out of centre in a 16.5px box. The engine had reserved that padding when
+// it sized the box; only the painter was not honouring it.
+func TestTextSitsInsideItsPadding(t *testing.T) {
+	f := loadTestFonts(t)
+	e := NewEngine(f)
+	chip := Para(Style{
+		Family: "Roboto", Size: 8.8, Weight: Regular,
+		Padding: XY(3, 8), Radius: 999,
+	}, "Buildroot")
+	page := Box(Style{Display: Block, Width: 200, Height: 100}, chip)
+
+	root := e.Layout(page, 200, 100)
+	html := RenderHTML(&Render{Frame: root, Width: 200, Height: 100, Usable: 100})
+
+	// The line begins where the padding leaves off, on both axes.
+	if !strings.Contains(html, "left:8px;top:3px") {
+		t.Errorf("the chip's text ignored its padding:\n%s", html)
+	}
+
+	// And the box is tall enough to hold the line plus both paddings, or the
+	// text would be centred in a box too small for it.
+	text := root.Children[0]
+	want := 8.8*text.Style.LineHeightOr() + 6
+	if diff := text.Height - want; diff > 0.01 || diff < -0.01 {
+		t.Errorf("chip height %.2f, want %.2f (one line plus 3px above and below)",
+			text.Height, want)
+	}
+}
+
+// Weight zero is not a weight.
+//
+// Written into CSS it is invalid, so the browser drops the declaration and
+// chooses for itself. It was happening on 77 of the runs on a real page —
+// silently, because a style that names no weight and has no ancestor to inherit
+// one from keeps Go's zero value.
+func TestUnsetWeightIsWrittenAsRegular(t *testing.T) {
+	f := loadTestFonts(t)
+	e := NewEngine(f)
+	// No weight anywhere: not on the text, not on the page above it.
+	para := Para(Style{Family: "Roboto", Size: 10}, "unweighted")
+	page := Box(Style{Display: Block, Width: 200, Height: 100}, para)
+
+	root := e.Layout(page, 200, 100)
+	html := RenderHTML(&Render{Frame: root, Width: 200, Height: 100, Usable: 100})
+
+	if strings.Contains(html, "font-weight:0") {
+		t.Errorf("emitted an invalid weight; the browser will pick its own:\n%s", html)
+	}
+	if !strings.Contains(html, "font-weight:400") {
+		t.Errorf("expected the default weight to be written out:\n%s", html)
+	}
+}

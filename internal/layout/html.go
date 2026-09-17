@@ -219,15 +219,24 @@ func (p *HTMLPainter) Text(f *Frame) {
 	//
 	// The ink lands where it did. The difference is that the geometry now says
 	// so.
+	// Lines start at the frame's CONTENT corner, not its own. A chip is a box
+	// with padding and a radius, and its text was written from the box corner —
+	// so it sat hard against the top edge with all the slack below it, which is
+	// what "the text is not centred in the rounded shape" looks like. The
+	// engine had already reserved that padding when it sized the box; only the
+	// painter was not honouring it.
+	left := s.Padding.Left + s.Border.Width
+	top := s.Padding.Top + s.Border.Width
+
 	lh := s.Size * s.LineHeightOr()
 	for i, line := range f.Lines {
 		fmt.Fprintf(&p.b,
-			`<div style="position:absolute;left:0;top:%spx;width:%spx;height:%spx;`+
+			`<div style="position:absolute;left:%spx;top:%spx;width:%spx;height:%spx;`+
 				`line-height:%spx;white-space:pre;%s">`,
-			num(float64(i)*lh), num(line.Width), num(lh), num(lh), base)
+			num(left), num(top+float64(i)*lh), num(line.Width), num(lh), num(lh), base)
 		for _, piece := range line.Pieces {
 			fmt.Fprintf(&p.b, `<span style="font-weight:%d;color:%s">%s</span>`,
-				int(s.WeightOf(piece.Bold)), orElse(piece.Colour, s.Colour),
+				int(s.WeightOf(piece.Bold).OrRegular()), orElse(piece.Colour, s.Colour),
 				html.EscapeString(piece.Text))
 		}
 		p.b.WriteString(`</div>`)
