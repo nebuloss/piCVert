@@ -199,9 +199,14 @@ export interface LoadAnswer extends Answer {
   fit: FitReportData;
 }
 
+/**
+ * A save answers with the stored document and nothing else.
+ *
+ * No fit: that is a layout, and a keystroke must not pay for one. The page and
+ * what the engine thought of it come from render(), separately.
+ */
 export interface SaveAnswer extends Answer {
   doc: Cv;
-  fit: FitReportData;
 }
 
 export interface PreviewAnswer extends Answer {

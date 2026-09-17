@@ -42,6 +42,11 @@ button.danger:hover:not(:disabled) {
 .state[data-kind="dirty"] { color: var(--caution); }
 .state[data-kind="saved"] { color: var(--accent); }
 .state[data-kind="error"] { color: var(--warn); font-weight: 600; }
+/* Somebody else changed this CV. Not an error — nothing is broken — but the
+   one state where the editor has stopped saving and is waiting to be told
+   what to do. */
+.state[data-kind="conflict"] { color: var(--warn); font-weight: 600; }
+.state[data-kind="conflict"]::before { content: "⚠ "; }
 
 /* --- the two columns ----------------------------------------------------- */
 

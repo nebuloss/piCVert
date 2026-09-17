@@ -151,6 +151,30 @@ a preview in an iframe; the expensive part is the layout, which happens on the
 server. A diffing library would add a dependency to save work that is not being
 done.
 
+### Two rates, not one
+
+Saving and drawing are separate, and run at different speeds on purpose:
+
+| | when | cost |
+|---|---|---|
+| save | every change, at once | 496 µs — validate and write JSON |
+| draw | after a pause | ~200 ms — the whole layout engine |
+
+They were one thing, because a save reported the fit and **the fit is a
+layout**. That made a keystroke cost a full render (193 ms against a render's
+182), so the service could sustain about five characters a second in total, for
+everybody using it.
+
+Nothing is lost by drawing late: the document is already safe on disk, and what
+arrives a quarter of a second behind is only the picture of it.
+
+The save has no timer at all. Coalescing comes from *serialising* — one save in
+flight, changes during it marked dirty, the next going out the moment it lands
+and carrying everything meanwhile, because what is sent is the document as it
+now stands rather than a diff. The rate settles at one per round trip, so nobody
+has to pick a number and the number picked for them is never wrong for their
+connection.
+
 ### Observer — the document is the subject
 
 `model/document.js`. Typing changes the document; the preview, the autosave and

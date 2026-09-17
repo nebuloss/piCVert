@@ -41,6 +41,8 @@ class Editor {
 
   private lang: string;
   private templates: TemplateSummary[] = [];
+  /** The revision the open document was loaded or last saved at. */
+  private revision = '';
 
   private doc?: CvDocument;
   private view?: Form;
@@ -111,13 +113,15 @@ class Editor {
     this.lang = lang;
     this.say('saving', 'loading…');
 
-    let answer;
+    let loaded;
     try {
-      answer = await this.api.load(this.lang);
+      loaded = await this.api.load(this.lang);
     } catch (error) {
       this.fail(error);
       return;
     }
+    const answer = loaded.body;
+    this.revision = loaded.revision;
 
     const template: Template = answer.template;
     this.doc = new CvDocument(answer.doc);
@@ -133,21 +137,11 @@ class Editor {
       onError: this.fail,
     });
 
-    this.preview = new Preview(this.doc, this.page, (doc) => this.api.preview(doc, this.lang));
+    this.preview = new Preview(this.doc, this.page, (doc) => this.api.render(doc, this.lang));
     this.preview.onFit = (fit) => this.report.show(fit);
     this.preview.onError = (error) => this.report.error(error.message);
 
-    this.autosave = new Autosave(this.doc, (doc) => this.api.save(doc, this.lang)).guard();
-    this.autosave.on('state', ({ kind, text }) => this.say(kind, text));
-    this.autosave.on('saved', (result) => {
-      // The STORED document comes back and replaces ours. The store pins the
-      // template as a UUID and stamps the time, so a client keeping its own
-      // idea of the document would send those back stale on the next save.
-      // Adopted quietly: this is not a change the person made, and redrawing
-      // the form under them would be the editor twitching on every save.
-      this.doc?.adopt(result.doc);
-      this.report.show(new Fit(result.fit));
-    });
+    this.wireAutosave();
 
     this.languages.show(answer.languages, this.lang);
     this.view.render();
@@ -172,8 +166,10 @@ class Editor {
     try {
       const answer = await this.api.photo(file, this.lang);
       this.doc?.replace(answer.doc);
-      this.report.show(new Fit(answer.fit));
       this.say('saved', 'saved');
+      // The fit comes with the redraw, like every other change: a portrait
+      // changes the page, and the page is what reports on itself.
+      void this.preview?.refresh();
     } catch (error) {
       this.fail(error);
     }
@@ -190,7 +186,7 @@ class Editor {
     try {
       const answer = await this.api.reorderSections(order, this.lang);
       this.doc?.replace(answer.doc);
-      this.report.show(new Fit(answer.fit));
+      void this.preview?.refresh();
     } catch (error) {
       this.fail(error);
     }
@@ -216,6 +212,76 @@ class Editor {
     } catch (error) {
       this.fail(error);
     }
+  }
+
+  /**
+   * resolveConflict asks the person what to do, and does nothing until they say.
+   *
+   * There is no right answer to pick for them. Reloading throws away what they
+   * have typed; overwriting throws away what somebody else typed. The interface
+   * knows which is worse in neither case, so it describes both and waits — and
+   * the autosave stays stopped meanwhile, so nothing is decided by default.
+   */
+  private resolveConflict(): void {
+    const keep = confirm(
+      'Someone else has changed this CV since you opened it.\n\n' +
+      'OK — reload theirs, and lose what you have typed here.\n' +
+      'Cancel — keep yours, and overwrite theirs.',
+    );
+    if (keep) {
+      void this.open(this.lang);
+      return;
+    }
+    // Overwriting is deliberate, so it is done without a revision at all —
+    // which is the API's way of saying "I am not making a claim about what I
+    // am replacing".
+    void this.overwrite();
+  }
+
+  private async overwrite(): Promise<void> {
+    if (!this.doc) return;
+    this.say('saving', 'overwriting…');
+    try {
+      const answer = await this.api.save(this.doc.raw, this.lang, '');
+      this.doc.adopt(answer.body.doc);
+      this.revision = answer.revision;
+      void this.preview?.refresh();
+      this.say('saved', 'saved — theirs was overwritten');
+      // A new queue: the old one stopped itself at the conflict and will not
+      // start again, which is what kept it from deciding this on its own.
+      this.wireAutosave();
+    } catch (error) {
+      this.fail(error);
+    }
+  }
+
+  /**
+   * wireAutosave builds the save queue and attaches it to the document.
+   *
+   * Built afresh rather than reset, and that is deliberate: a queue stops
+   * itself on a conflict and must NOT start again on its own, so "carry on
+   * saving" is a new object rather than a flag somebody could clear by
+   * accident from anywhere else.
+   */
+  private wireAutosave(): void {
+    if (!this.doc) return;
+    this.autosave?.release();
+    this.autosave = new Autosave(
+      this.doc, (doc) => this.api.save(doc, this.lang, this.revision),
+    ).guard();
+    this.autosave.on('state', ({ kind, text }) => this.say(kind, text));
+    this.autosave.on('conflict', () => this.resolveConflict());
+    this.autosave.on('saved', ({ body, revision }) => {
+      // The STORED document comes back and replaces ours. The store pins the
+      // template as a UUID and stamps the time, so a client keeping its own
+      // idea of the document would send those back stale on the next save.
+      // Adopted quietly: this is not a change the person made, and redrawing
+      // the form under them would be the editor twitching on every save.
+      this.doc?.adopt(body.doc);
+      // And the revision moves with it, so the next save is checked against
+      // what this client itself wrote.
+      this.revision = revision;
+    });
   }
 
   private deleted(answer: DeleteAnswer): void {

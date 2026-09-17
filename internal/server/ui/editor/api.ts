@@ -12,6 +12,7 @@
  */
 
 import { HttpClient } from '../lib/http.ts';
+import type { Tagged } from '../lib/http.ts';
 import type {
   Cv, DeleteAnswer, LanguagesAnswer, LinksAnswer, LoadAnswer,
   PreviewAnswer, SaveAnswer, TemplatesAnswer, HistoryAnswer,
@@ -43,15 +44,39 @@ export class Api {
     return `/api/p/${this.slug}${suffix}${this.#q(lang)}`;
   }
 
-  load(lang: string): Promise<LoadAnswer> {
-    return this.http.get<LoadAnswer>(this.#p('', lang));
+  /**
+   * load brings back the document AND the revision it is at.
+   *
+   * The revision is what makes a save safe: sent back with the next write, it
+   * lets the server refuse a change built on a document that has since moved,
+   * rather than letting it overwrite whatever moved it.
+   */
+  load(lang: string): Promise<Tagged<LoadAnswer>> {
+    return this.http.tagged<LoadAnswer>('GET', this.#p('', lang));
   }
 
-  save(doc: Cv, lang: string): Promise<SaveAnswer> {
-    return this.http.put<SaveAnswer>(this.#p('', lang), doc);
+  /**
+   * save stores the document. It does NOT draw the page.
+   *
+   * That separation is the whole reason a change can be saved the moment it is
+   * made: writing a few kilobytes of JSON takes microseconds, where laying the
+   * page out takes most of a second. The page is drawn by render() below, on a
+   * pause rather than on a letter.
+   */
+  save(doc: Cv, lang: string, revision: string): Promise<Tagged<SaveAnswer>> {
+    return this.http.tagged<SaveAnswer>('PUT', this.#p('', lang), doc, revision);
   }
 
-  preview(doc: Cv, lang: string): Promise<PreviewAnswer> {
+  /**
+   * render lays the document out and brings back the page and the fit.
+   *
+   * The expensive call, and the one the editor makes on a pause rather than on
+   * every change. It takes the document rather than reading the stored one so
+   * that it still works while a save is in flight — the two are independent by
+   * design, and a render that had to wait for a save would reintroduce exactly
+   * the coupling this separation removed.
+   */
+  render(doc: Cv, lang: string): Promise<PreviewAnswer> {
     return this.http.post<PreviewAnswer>(this.#p('/preview', lang), doc);
   }
 

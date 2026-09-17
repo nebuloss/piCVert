@@ -14,7 +14,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-          cache-dependency-path: go.sum
+          # BOTH modules. The bundler lives in its own, so a key built from the
+          # root go.sum alone leaves its dependencies uncached — and `go
+          # generate` then fails on a cold runner with a go.mod error rather
+          # than anything to do with the interface.
+          cache-dependency-path: |
+            go.sum
+            tools/bundle/go.sum
 
       # gofmt is not advisory: unformatted Go is a review distraction, and the
       # tool settles it rather than the reviewer.

@@ -19,8 +19,8 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 
 	"picvert/internal/document"

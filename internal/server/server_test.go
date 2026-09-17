@@ -204,7 +204,7 @@ func TestAnInvalidLinkIsNotACV(t *testing.T) {
 	}
 }
 
-func TestSavingValidatesStoresAndReportsTheFit(t *testing.T) {
+func TestSavingValidatesAndStores(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
@@ -221,8 +221,15 @@ func TestSavingValidatesStoresAndReportsTheFit(t *testing.T) {
 		t.Fatalf("the save failed: %d %s", w.Code, w.Body.String())
 	}
 	answer := decode(t, w)
-	if answer["fit"] == nil {
-		t.Error("the save did not report the fit; the editor would have to ask again")
+	// A save reports NO fit, deliberately. The fit is a layout, and a keystroke
+	// must not pay for one — see Server.saved. Reinstating it here would
+	// reinstate a 193 ms save.
+	if answer["fit"] != nil {
+		t.Error("the save reported a fit, which means it laid the page out — " +
+			"that is most of a second of CPU for one keystroke")
+	}
+	if answer["doc"] == nil {
+		t.Error("the save did not return the stored document")
 	}
 
 	// Stored, not merely echoed.

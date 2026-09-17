@@ -1,11 +1,20 @@
 /**
- * preview.ts — the page as it would be, from what has not been saved yet.
+ * preview.ts — the page, drawn on a pause rather than on a letter.
  *
- * This is the hot path of the whole service. It runs on every pause in typing,
- * and each run is a complete layout of the CV — which is affordable only
- * because the engine lays out ONCE and both renderings come from that single
- * result. The engine this replaced ran a browser layout and a separate PDF
- * layout here, and they disagreed by about a line.
+ * # IT RUNS AT ITS OWN RATE, AND THAT IS THE POINT
+ *
+ * Saving and drawing used to be one thing, because a save reported the fit and
+ * the fit is a layout. That made a keystroke cost a full render — measured at
+ * 193 ms against a render's 182 — so the service could sustain about five
+ * characters a second in total, for everybody.
+ *
+ * They are now separate and run at different rates on purpose:
+ *
+ *   SAVING     every change, immediately. Microseconds: validate and write.
+ *   DRAWING    after a pause. Hundreds of milliseconds: the whole engine.
+ *
+ * Nothing is lost by drawing late. The document is already safe on disk; what
+ * arrives a quarter of a second behind is only the picture of it.
  */
 
 import { Debounced } from '../lib/emitter.ts';
@@ -23,8 +32,12 @@ export class Preview {
     private readonly doc: CvDocument,
     private readonly frame: HTMLIFrameElement,
     private readonly render: (doc: Cv) => Promise<PreviewAnswer>,
-    delay = 250,
+    delay = 400,
   ) {
+    // Debounced, and it is the only thing here that is. Typing produces a
+    // change per letter and a picture per letter is a picture nobody sees —
+    // the layout takes longer than the gap between keystrokes, so most of them
+    // would be drawn and replaced before a screen refresh.
     this.task = new Debounced(() => this.draw(), delay);
     doc.on('value', () => this.task.schedule());
     doc.on('shape', () => this.task.schedule());
@@ -55,7 +68,7 @@ export class Preview {
    * no address: it is what is being typed, and it has not been saved. A preview
    * that had to be saved first would not be a preview.
    */
-  private write(html: string): void {
+  write(html: string): void {
     const inner = this.frame.contentDocument;
     if (!inner) return;
     inner.open();
