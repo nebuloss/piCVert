@@ -43,8 +43,8 @@ last section off the bottom — the measurement said yes and the page said no.
 
 ```
 cv.json ──► LAYOUT ENGINE ──► frame: boxes + already-broken lines
-                                   ├──► HTML emitter
-                                   └──► PDF emitter
+                                   ├──► HTML painter
+                                   └──► PDF painter  (+ the cv.json inside it)
 ```
 
 The layout is computed **once**. Both emitters receive the same frame, with the
@@ -119,8 +119,10 @@ class of divergence this project exists to remove.
 ```bash
 go build -o picvert ./cmd/picvert
 
-./picvert fit    --profile examples/jean-dupont
-./picvert render --profile examples/jean-dupont --out cv.html
+./picvert fit     --profile examples/jean-dupont
+./picvert render  --profile examples/jean-dupont --out cv.html
+./picvert pdf     --profile examples/jean-dupont --out cv.pdf
+./picvert preview --profile examples/jean-dupont        # / and /cv.pdf
 ```
 
 ```
@@ -138,6 +140,17 @@ DOES NOT FIT
   right      -8.0 px left
   shorten: projets-techniques
 ```
+
+## The PDF carries its own source
+
+A PDF cannot be read back into a CV: its content stream says where ink goes, not
+which field a run of text came from. So the file carries the `cv.json` it was
+rendered from, the way a Factur-X invoice carries its XML — about **1 %** of the
+file, and the export becomes both the thing you send and a thing this engine can
+open again.
+
+Fonts are embedded and subset, with `ToUnicode` maps, so the text selects and
+searches as text rather than as a picture of it.
 
 ## The page is self-contained
 
@@ -161,13 +174,27 @@ with no implementation fails at startup rather than measuring as nothing.
 Which patterns are used where, and which are deliberately absent and why:
 [`docs/DESIGN.md`](docs/DESIGN.md).
 
+## Every template is tested by existing
+
+The conformance kit walks `templates/` and puts each one through the same
+battery, against a document synthesised from the field tree. A new template is
+covered from the moment its directory exists — a kit that had to be extended per
+template is one nobody extends, and the second template ships untested.
+
+It holds four contracts that all break *silently*: a section type accepted but
+not composed renders a blank card; a block the theme does not name cannot be
+reported as overflowing; a page that does not read as `[header…, body]` makes the
+margin measurement go quiet; and a font declared but not shipped means the page
+draws in whatever the reader has — which is wider, on a layout that fits by less
+than a line.
+
 ## State
 
-Working: the layout engine, text measurement and breaking, the HTML emitter,
-themes-as-data, the template registry, document validation.
+Working: the layout engine, text measurement and breaking, both painters, the
+embedded source, themes-as-data, the template registry, validation, the
+conformance kit, and mobile scaling.
 
-Not yet: the PDF emitter, and a handful of placement bugs visible on a dense CV.
-See [`docs/STATUS.md`](docs/STATUS.md).
+Known gaps and deliberate differences: [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Licence
 

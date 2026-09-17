@@ -56,6 +56,32 @@ func previewCmd(args []string) error {
 		_, _ = w.Write([]byte(page))
 	})
 
+	// The PDF, from the same layout the page above is drawn from — which is
+	// what makes looking at both worth anything.
+	mux.HandleFunc("GET /cv.pdf", func(w http.ResponseWriter, r *http.Request) {
+		lang := r.URL.Query().Get("lang")
+		p, err := build(*profileDir, lang)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data, err := renderPDF(p, *profileDir, lang)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		// Inline by default: this exists to be looked at, and a download is a
+		// worse way to look at something than a tab is.
+		disposition := "inline"
+		if r.URL.Query().Get("download") == "1" {
+			disposition = "attachment"
+		}
+		w.Header().Set("Content-Disposition", disposition+`; filename="cv.pdf"`)
+		w.Header().Set("Cache-Control", "no-store, must-revalidate")
+		_, _ = w.Write(data)
+	})
+
 	mux.HandleFunc("GET /fit", func(w http.ResponseWriter, r *http.Request) {
 		p, err := build(*profileDir, r.URL.Query().Get("lang"))
 		if err != nil {
@@ -86,5 +112,8 @@ func previewCmd(args []string) error {
 	mux.HandleFunc("GET /favicon.svg", icon)
 
 	log.Printf("piCVert preview on http://%s  (rebuilt on every reload)", *addr)
+	log.Printf("  /         the page")
+	log.Printf("  /cv.pdf   the PDF, from the same layout")
+	log.Printf("  /fit      does it hold on one page")
 	return http.ListenAndServe(*addr, mux)
 }
