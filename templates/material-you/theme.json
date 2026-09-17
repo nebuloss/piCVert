@@ -150,8 +150,8 @@
       "width": 20,
       "height": 20,
       "radius": 7,
-      "background": "$primaryContainer",
-      "colour": "$primary",
+      "background": "$cardAlt",
+      "colour": "$onSurfaceVar",
       "padding": "4"
     },
     "contactText": {
