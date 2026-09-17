@@ -74,15 +74,26 @@ def main():
         subsetter.populate(unicodes=CODEPOINTS)
         subsetter.subset(font)
 
-        font.flavor = "woff2"
+        # The same subset in two wrappings. woff2 for the page, which is what a
+        # browser wants; bare TrueType for the PDF, which cannot read woff2 —
+        # the format takes raw sfnt only. One subsetting pass, so the two can
+        # never hold different outlines.
         buf = io.BytesIO()
+        font.flavor = "woff2"
         font.save(buf)
-        out = os.path.join(FONTS, f"Roboto-{name}.woff2")
-        with open(out, "wb") as fh:
+        with open(os.path.join(FONTS, f"Roboto-{name}.woff2"), "wb") as fh:
             fh.write(buf.getvalue())
+
+        raw = io.BytesIO()
+        font.flavor = None
+        font.save(raw)
+        with open(os.path.join(FONTS, f"Roboto-{name}.subset.ttf"), "wb") as fh:
+            fh.write(raw.getvalue())
+
         size = len(buf.getvalue())
         total += size
-        print(f"  Roboto-{name:<8} {size/1024:6.1f} KB")
+        print(f"  Roboto-{name:<8} {size/1024:6.1f} KB woff2  "
+              f"{len(raw.getvalue())/1024:6.1f} KB ttf")
     print(f"  total     {total/1024:6.1f} KB")
 
 

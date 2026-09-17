@@ -33,6 +33,8 @@ func main() {
 		err = fitCmd(os.Args[2:])
 	case "preview":
 		err = previewCmd(os.Args[2:])
+	case "pdf":
+		err = pdfCmd(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -55,6 +57,10 @@ func usage() {
 
   picvert fit --profile <dir> [--lang xx]
         Reports whether it holds on one page, and what is left over.
+
+  picvert pdf --profile <dir> [--lang xx] [--out cv.pdf]
+        Writes the PDF, from the same layout the page is drawn from. The
+        source cv.json travels inside the file.
 
   picvert preview --profile <dir> [--addr host:port]
         Serves the CV, laid out again on every reload. /fit reports the fit.
