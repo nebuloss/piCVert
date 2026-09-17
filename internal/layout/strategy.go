@@ -97,6 +97,24 @@ func (textLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 		return f
 	}
 
+	// The box shrinks to the text it ended up holding, unless the theme fixed a
+	// width or asked it to grow.
+	//
+	// It was left at the full width offered, which draws correctly — the box is
+	// transparent — and is wrong in two ways that only show later. A paragraph
+	// of one short line claimed the whole column, so it overlapped whatever sat
+	// beside it: harmless to look at, but it breaks selecting the text, and it
+	// makes an overlap check unable to tell a real collision from this. And a
+	// box wider than its content reports a width nothing in it occupies, which
+	// is the sort of figure a later pass takes at its word.
+	if s.Width == 0 && s.Grow == 0 {
+		widest := 0.0
+		for _, line := range f.Lines {
+			widest = math.Max(widest, line.Width)
+		}
+		f.Width = math.Min(b.outer, widest+b.inset.Left+b.inset.Right)
+	}
+
 	m := e.Fonts.Metrics(s.Family, s.Size, s.Weight, s.Italic)
 	lh := s.Size * s.LineHeightOr()
 	// The baseline sits where the extra leading is split evenly above and below
@@ -217,6 +235,22 @@ func (r rowLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 }
 
 // fill measures the children and cuts them into lines.
+//
+// WHY EACH CHILD IS MEASURED AGAINST THE WHOLE ROW, not against what is left of
+// it. Measuring against the remaining room seems right — it is how one would
+// fill a shelf — and it is wrong for a reason that only shows on a dense CV.
+//
+// A child offered almost no room wraps to almost nothing, so its frame comes
+// back a few pixels wide, or zero. The row then seats the NEXT child a few
+// pixels along, while the first one's text draws at the width it actually
+// needs: two runs of text on top of each other. It appeared as skill chips
+// overlapping their neighbours, and only ever near the end of a line, which is
+// what made it look intermittent.
+//
+// A child's intrinsic width does not depend on where it happens to land. So it
+// is measured once against the full row, and the wrap decision is made
+// afterwards, from a width that is true. That is also what flexbox does: it
+// measures max-content first, then breaks.
 func (r rowLayout) fill(e *Engine, n *Node, b box, avail Space) [][]seat {
 	s := n.Style
 	var lines [][]seat
@@ -224,17 +258,26 @@ func (r rowLayout) fill(e *Engine, n *Node, b box, avail Space) [][]seat {
 	curW := 0.0
 
 	for _, child := range n.Children {
-		// Measured against what is LEFT, not the whole row: a block in a row
-		// takes the width of its content, as flexbox does, and only a growing
-		// child claims the remainder. Measuring every child at full width made
-		// each one as wide as the row and pushed its siblings off the page.
-		room := b.inner - curW
-		if len(cur) > 0 {
-			room -= s.Gap
-		}
-		cf := e.Measure(child, Space{Width: math.Max(0, room), Height: avail.Height})
+		cf := e.Measure(child, Space{Width: b.inner, Height: avail.Height})
+		// A child that neither fixes its width nor grows takes the width of its
+		// content, as flexbox does; only a growing child claims the remainder.
 		if child.Style.Width == 0 && child.Style.Grow == 0 {
 			cf.Width = natural(cf)
+			// Re-measured at its own width, because a text node measured into a
+			// wide row broke its lines for that width. Shrinking the box
+			// without re-breaking would leave lines that no longer match it.
+			if cf.Width < b.inner {
+				cf = e.Measure(child, Space{Width: cf.Width, Height: avail.Height})
+			}
+		} else if child.Style.Grow > 0 {
+			// A growing child contributes NOTHING to the width already taken:
+			// what it gets is whatever the others leave, worked out in share()
+			// below. Counting the full row it was measured into would make the
+			// line look over-full, leave no spare to hand out, and let the
+			// child keep the whole row — which is how the right-hand column
+			// came out 734 px wide inside a 734 px body and broke its text far
+			// past the page edge.
+			cf.Width = 0
 		}
 		w := cf.Width + child.Style.Margin.Left + child.Style.Margin.Right
 
@@ -272,6 +315,9 @@ func (rowLayout) share(e *Engine, line []seat, s Style, inner float64) float64 {
 	for _, st := range line {
 		if g := st.node.Style.Grow; g > 0 {
 			st.frame.Width += spare * (g / grow)
+			// Re-laid at the width it actually got. Its contents were measured
+			// against the whole row, so without this its paragraphs keep the
+			// line breaks of a column far wider than the one it ended up in.
 			e.reflow(st.frame)
 		}
 	}
@@ -322,16 +368,14 @@ func (a Align) offset(line, child, marginTop float64) float64 {
 
 // natural is how wide a frame's content actually is, as opposed to the room it
 // was offered.
+//
+// Text and leaves already know: a text frame shrank to its lines when it was
+// measured, and an image is whatever size the theme gave it. Only a container
+// has to be asked, because its width is a fact about its children.
 func natural(f *Frame) float64 {
 	inset := f.Style.Padding.Left + f.Style.Padding.Right + 2*f.Style.Border.Width
 	switch f.Style.Display {
-	case Text:
-		widest := 0.0
-		for _, line := range f.Lines {
-			widest = math.Max(widest, line.Width)
-		}
-		return math.Min(f.Width, widest+inset)
-	case Image, Ellipse:
+	case Text, Image, Ellipse:
 		return f.Width
 	}
 	widest := 0.0

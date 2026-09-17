@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-func fonts(t *testing.T) *Fonts {
+func loadTestFonts(t *testing.T) *Fonts {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -89,7 +89,7 @@ func TestLineBreaksAreNeverOptimistic(t *testing.T) {
 		t.Fatal("reference is empty")
 	}
 
-	f := fonts(t)
+	f := loadTestFonts(t)
 	agreed := 0
 	for i, c := range cases {
 		style := Style{
@@ -147,7 +147,7 @@ func trimTrailing(s string) string {
 // Kerning must be in the measurement, because it is in the drawing. A width
 // computed without it is wider than what appears, and the break lands early.
 func TestWidthIncludesKerning(t *testing.T) {
-	f := fonts(t)
+	f := loadTestFonts(t)
 	// A pair the font kerns, against one it does not.
 	kerned := f.Width("AV", "Roboto", 20, Regular, false, 0)
 	apart := f.Width("A", "Roboto", 20, Regular, false, 0) +
@@ -159,7 +159,7 @@ func TestWidthIncludesKerning(t *testing.T) {
 }
 
 func TestWidthIsProportionalToSize(t *testing.T) {
-	f := fonts(t)
+	f := loadTestFonts(t)
 	at10 := f.Width("Ingénieur", "Roboto", 10, Regular, false, 0)
 	at20 := f.Width("Ingénieur", "Roboto", 20, Regular, false, 0)
 	if diff := at20 - 2*at10; diff > 0.01 || diff < -0.01 {
@@ -170,7 +170,7 @@ func TestWidthIsProportionalToSize(t *testing.T) {
 // Bold is measured in the bold face. Measuring it in the regular one is how a
 // line that holds in the measurement overflows on the page.
 func TestBoldIsMeasuredInTheBoldFace(t *testing.T) {
-	f := fonts(t)
+	f := loadTestFonts(t)
 	regular := f.Width("Développeur", "Roboto", 12, Regular, false, 0)
 	bold := f.Width("Développeur", "Roboto", 12, Bold, false, 0)
 	if bold <= regular {
@@ -181,7 +181,7 @@ func TestBoldIsMeasuredInTheBoldFace(t *testing.T) {
 // A word wider than its column overflows rather than being cut: an overflow is
 // visible and fixable, a silent truncation looks like lost data.
 func TestOverlongWordIsNotCut(t *testing.T) {
-	f := fonts(t)
+	f := loadTestFonts(t)
 	style := Style{Family: "Roboto", Size: 10, Weight: Regular}
 	lines := breakText([]Span{{Text: "Reimplementierungsbeauftragter"}}, style, 20, f)
 	if len(lines) != 1 {
@@ -195,7 +195,7 @@ func TestOverlongWordIsNotCut(t *testing.T) {
 // A line never keeps the space that would have followed its last word: the
 // space is what the break consumed.
 func TestTrailingSpacesAreDropped(t *testing.T) {
-	f := fonts(t)
+	f := loadTestFonts(t)
 	style := Style{Family: "Roboto", Size: 10, Weight: Regular}
 	width := f.Width("alpha beta", "Roboto", 10, Regular, false, 0)
 	lines := breakText([]Span{{Text: "alpha beta gamma"}}, style, width, f)
@@ -210,7 +210,7 @@ func TestTrailingSpacesAreDropped(t *testing.T) {
 // Bold inside a sentence must stay part of the paragraph, or the line would
 // break at every style change.
 func TestBoldRunsStayInTheSameParagraph(t *testing.T) {
-	f := fonts(t)
+	f := loadTestFonts(t)
 	style := Style{Family: "Roboto", Size: 10, Weight: Regular}
 	lines := breakText([]Span{
 		{Text: "conception et "},

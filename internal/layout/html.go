@@ -45,8 +45,7 @@ func RenderHTML(r *Render) string {
 	fmt.Fprintf(&p.b,
 		`<div class="page" style="position:relative;width:%spx;height:%spx;overflow:hidden">`,
 		num(r.Width), num(r.Height))
-	x, y := r.Frame.ContentOrigin()
-	p.origin = point{x, y}
+	p.origin = point{r.Frame.X, r.Frame.Y}
 	for _, child := range r.Frame.Children {
 		child.Paint(p)
 	}
@@ -98,14 +97,24 @@ func cssBackground(fill Fill) string {
 }
 
 // Box opens a container, paints what is inside it, and closes it.
+//
+// WHY THE ORIGIN IS THE BOX'S CORNER AND NOT ITS CONTENT CORNER. An absolutely
+// positioned child is placed against its ancestor's PADDING BOX — CSS does not
+// move it in by the padding, the way normal flow does. So writing a child's
+// offset relative to the content corner subtracted the padding that CSS was
+// never going to add back, and every card drew its contents hard against its
+// own edge: cancelled exactly, on every nested box, which is why it looked like
+// the padding had simply been forgotten rather than counted twice.
+//
+// The engine already placed the child correctly, inside the padding. The
+// painter's only job is to express that same position relative to the box CSS
+// will measure it from.
 func (p *HTMLPainter) Box(f *Frame, in func()) {
 	fmt.Fprintf(&p.b, `<div style="%s">`, p.frame(f))
-	// The children's coordinates are relative to THIS box's content corner.
 	// Saved and restored rather than recomputed on the way out, so a change
 	// here cannot leave the origin pointing at the wrong ancestor.
 	saved := p.origin
-	x, y := f.ContentOrigin()
-	p.origin = point{x, y}
+	p.origin = point{f.X, f.Y}
 	in()
 	p.origin = saved
 	p.b.WriteString(`</div>`)
@@ -172,10 +181,25 @@ func (p *HTMLPainter) Text(f *Frame) {
 		base += ";font-style:italic"
 	}
 
+	// Each line sits in a box of exactly one line's height, placed at that
+	// line's top, and the text inside it is pushed down to the baseline.
+	//
+	// The baseline used to be a transform on a zero-height box at the top of
+	// the paragraph. It DRAWS in the right place — a transform moves the ink —
+	// but the box keeps its declared geometry, so every line's rectangle
+	// covered the whole paragraph and then some. Nothing looked wrong; what
+	// broke was everything that asks the page where its text is. Selecting a
+	// line selected its neighbours, and an overlap check could not tell a real
+	// collision from this one.
+	//
+	// The ink lands where it did. The difference is that the geometry now says
+	// so.
+	lh := s.Size * s.LineHeightOr()
 	for i, line := range f.Lines {
 		fmt.Fprintf(&p.b,
-			`<div style="position:absolute;left:0;top:0;transform:translateY(%spx);white-space:pre;%s">`,
-			num(f.Baselines[i]), base)
+			`<div style="position:absolute;left:0;top:%spx;width:%spx;height:%spx;`+
+				`line-height:%spx;white-space:pre;%s">`,
+			num(float64(i)*lh), num(line.Width), num(lh), num(lh), base)
 		for _, piece := range line.Pieces {
 			fmt.Fprintf(&p.b, `<span style="font-weight:%d;color:%s">%s</span>`,
 				int(s.WeightOf(piece.Bold)), orElse(piece.Colour, s.Colour),
@@ -185,3 +209,8 @@ func (p *HTMLPainter) Text(f *Frame) {
 	}
 	p.b.WriteString(`</div>`)
 }
+
+// `line-height` set to the measured line height is what puts the baseline back
+// where the engine computed it: a CSS line box centres its text in that height,
+// which is the same rule the engine used to place the baseline. So the two
+// agree without the painter having to know the font's metrics.
