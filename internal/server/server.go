@@ -33,17 +33,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"picvert/internal/access"
+	"picvert/internal/config"
 	"picvert/internal/document"
 	"picvert/internal/engine"
 	"picvert/internal/favicon"
 	"picvert/internal/lease"
+	"picvert/internal/metrics"
 	"picvert/internal/profiles"
 	"picvert/internal/security"
 	"picvert/internal/store"
 	"picvert/internal/templates"
 	"picvert/internal/tokens"
+	"picvert/internal/turnstile"
 )
 
 // Server is everything the service is made of, in one place.
@@ -64,26 +68,59 @@ type Server struct {
 	// Leases grant one editor at a time. See lease.go.
 	Leases *lease.Registry
 
+	// Config is every setting, from a file the environment may override.
+	Config config.Config
+	// Metrics is what the admin page reports. Counted rather than guessed.
+	Metrics *metrics.Metrics
+	// Session signs administration logins; the key is made at startup and
+	// never written down, so a restart signs everybody out.
+	Session *Session
+	// Challenge is Cloudflare's, and does nothing unless configured.
+	Challenge *turnstile.Verifier
+
 	// pages caches rendered CVs. See cache.go for what bounds it and why.
 	pages *pageCache
 }
 
-// New assembles the service.
-func New(home string) (*Server, error) {
+// New assembles the service from its configuration.
+func New(home string, cfg config.Config, version string) (*Server, error) {
+	if cfg.Home != "" {
+		home = cfg.Home
+	}
 	e := engine.New(home)
 	repo := profiles.New(home)
+	if cfg.DataDir != "" {
+		// Stated rather than read from the environment again: the config has
+		// already layered the file and the environment, and a second reading
+		// here would be a second answer.
+		dir := cfg.DataDir
+		repo.DataDirOf = func() string { return dir }
+	}
 	history := store.NewHistory(e.Registry)
+
+	leases := lease.New()
+	if cfg.Editing.LeaseTTL > 0 {
+		leases.TTL = cfg.Editing.LeaseTTL
+	}
+	if cfg.Editing.Inactivity > 0 {
+		leases.Inactivity = cfg.Editing.Inactivity
+	}
+
 	return &Server{
-		Engine:   e,
-		Profiles: repo,
-		Store:    store.New(repo, e.Registry, history),
-		History:  history,
-		Tokens:   tokens.New(repo),
-		Access:   access.New(),
-		Guard:    security.New(),
-		Registry: e.Registry,
-		Leases:   lease.New(),
-		pages:    newPageCache(),
+		Config:    cfg,
+		Metrics:   metrics.New(version),
+		Session:   &Session{Secret: config.NewSecret(), TTL: cfg.Admin.Session},
+		Challenge: turnstile.New(cfg.Turnstile.Secret),
+		Engine:    e,
+		Profiles:  repo,
+		Store:     store.New(repo, e.Registry, history),
+		History:   history,
+		Tokens:    tokens.New(repo),
+		Access:    access.New(),
+		Guard:     security.New(),
+		Registry:  e.Registry,
+		Leases:    leases,
+		pages:     newPageCache(),
 	}, nil
 }
 
@@ -99,8 +136,11 @@ func (s *Server) render(p *profiles.Profile, lang string) (*cached, error) {
 	}
 	key := file
 	if hit, ok := s.pages.get(key, info.ModTime()); ok {
+		s.Metrics.CacheHit()
 		return hit, nil
 	}
+	s.Metrics.CacheMiss()
+	started := time.Now()
 
 	doc, err := engine.ReadDoc(file)
 	if err != nil {
@@ -114,6 +154,7 @@ func (s *Server) render(p *profiles.Profile, lang string) (*cached, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.Metrics.Render(time.Since(started))
 	entry := &cached{stamp: info.ModTime(), html: html, page: page}
 	s.pages.put(key, entry)
 	return entry, nil
@@ -136,6 +177,7 @@ func (s *Server) pdf(p *profiles.Profile, lang string) ([]byte, error) {
 		return nil, err
 	}
 	entry.pdf = data
+	s.Metrics.PDF()
 	// The entry was weighed without its PDF, which is about 300 kB of it.
 	s.pages.grew(entry, len(data))
 	return data, nil
@@ -288,8 +330,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/", s.apiRoute)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", assetHandler(s.Guard)))
 
+	// Making a CV, when a challenge is configured. See newcv.go for why that
+	// condition is the feature rather than a setting.
+	mux.HandleFunc("POST /api/new", s.publicNew)
+
 	mux.HandleFunc("GET /{$}", s.home)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.Metrics.Request()
 		s.Guard.Base(w, r)
 		mux.ServeHTTP(w, r)
 	})
@@ -305,7 +352,7 @@ func lang(r *http.Request) string { return r.URL.Query().Get("lang") }
 func (s *Server) publicRoute(h func(http.ResponseWriter, *http.Request, *profiles.Profile)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := r.PathValue("slug")
-		if !s.Access.IsPublic(slug) {
+		if !s.Config.IsPublic(slug) {
 			fail(w, http.StatusNotFound, fmt.Errorf("unknown CV"))
 			return
 		}
@@ -320,20 +367,20 @@ func (s *Server) publicRoute(h func(http.ResponseWriter, *http.Request, *profile
 
 // home is the root: a named CV, or the creation page.
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
-	if slug := strings.TrimSpace(os.Getenv("PICVERT_HOME_PROFILE")); slug != "" {
+	if slug := s.Config.Profile; slug != "" {
 		if p, err := s.Profiles.Get(slug); err == nil {
 			s.sendViewer(w, r, viewerData{Base: "/p/" + p.Slug, Profile: p, Lang: lang(r)})
 			return
 		}
 	}
-	s.sendHTML(w, r, security.Home, homePage(s.publicList()))
+	s.sendHTML(w, r, security.Home, homePage(s.publicList(), s.Config.Turnstile.SiteKey))
 }
 
 // publicList is the CVs anyone may read, for the front page.
 func (s *Server) publicList() []*profiles.Profile {
 	var out []*profiles.Profile
 	for _, p := range s.Profiles.List() {
-		if s.Access.IsPublic(p.Slug) {
+		if s.Config.IsPublic(p.Slug) {
 			out = append(out, p)
 		}
 	}
@@ -434,6 +481,12 @@ func nameOf(p *profiles.Profile) string {
 // convenience”, and it must never grow a password, because a password-protected
 // surface would be the only thing here worth attacking.
 func (s *Server) Serve(addr, adminAddr string) error {
+	if addr == "" {
+		addr = s.Config.Listen
+	}
+	if adminAddr == "" {
+		adminAddr = s.Config.Admin.Listen
+	}
 	errs := make(chan error, 2)
 	go func() {
 		log.Printf("piCVert on http://%s", addr)

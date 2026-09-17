@@ -54,7 +54,7 @@ func TestWhatOneCachedProfileCosts(t *testing.T) {
 func TestMemoryUnderLoad(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
-	t.Setenv("PICVERT_PUBLIC", "*")
+	s.Config.Access.Public = []string{"*"}
 
 	doc, err := s.Store.Read(slug, "")
 	if err != nil {

@@ -26,7 +26,7 @@ import (
 func TestConcurrentReadsAreSafe(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
-	t.Setenv("PICVERT_PUBLIC", slug)
+	s.Config.Access.Public = []string{slug}
 
 	var failures atomic.Int64
 	var wg sync.WaitGroup

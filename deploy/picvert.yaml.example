@@ -1,0 +1,126 @@
+# piCVert — copy to /etc/picvert.yaml and edit.
+#
+# Every setting below is optional and shows its default, so an empty file is a
+# working service. This file is NEVER rewritten by piCVert: your comments
+# survive, and it is safe to keep in git — provided you do not put secrets in
+# the copy you commit.
+#
+# The environment overrides anything here, which is how a container injects a
+# secret without ever writing it to a disk.
+#
+#   picvert config     shows what the service would actually be told
+#   picvert passwd     hashes a password for the section below
+
+# The address the world reaches this service at, WITH its scheme.
+#
+# This is what every link piCVert hands out is built from: the private links in
+# the admin page, the share link in the editor, the address `picvert new`
+# prints. Without it those come out as bare paths, which are no use to somebody
+# who has to paste one into a message.
+#
+# It cannot be worked out from a request: behind a reverse proxy the Host header
+# is the proxy's idea of the service, and the scheme is plain HTTP whatever the
+# world outside sees.
+domain: "https://picvert.app.patapouf.club"
+
+# The public port. Stays on localhost behind a proxy.
+listen: "127.0.0.1:3000"
+
+admin:
+  # The administration port. It manages every CV on the service.
+  listen: "127.0.0.1:3001"
+
+  # A PASSWORD HASH, never a password. Run `picvert passwd` and paste what it
+  # prints. piCVert refuses to start if this looks like plaintext.
+  #
+  # Empty means no login, which is the default and is right for the normal
+  # arrangement: the port is protected by not being reachable from outside.
+  # Set this if you intend to reach it over a VPN or a tunnel — it is defence
+  # in depth, NOT permission to proxy this port to the internet.
+  # password: "pbkdf2-sha256$600000$...$..."
+
+  # How long a login lasts. The signing key is made at startup and never
+  # written down, so a restart signs everybody out.
+  session: "12h"
+
+# Cloudflare Turnstile, for the front page where a stranger can make a CV.
+#
+# Off unless BOTH keys are set. Without it there is no public creation form at
+# all: a route that lets anybody make a CV is a disk somebody fills with a shell
+# loop, and a per-address limit only slows down an attacker with one address.
+#
+# The site key is public and goes into the page. The secret is not, and is what
+# makes the challenge real — one checked only in the browser is not checked.
+turnstile:
+  # site-key: "0x4AAAAAAA..."
+  # secret: "0x4AAAAAAA..."
+
+access:
+  # Which CVs are readable at a guessable address. Empty means none, and that
+  # is the right default: a CV carries a name, an email address and an employer.
+  # Use ["*"] to publish everything, including CVs somebody else made.
+  public: []
+
+  # Honour X-Forwarded-For. Say yes only behind a proxy you control: trusting it
+  # unconditionally lets anyone claim a fresh address per request and makes the
+  # failure throttle decorative.
+  trust-proxy: false
+
+# A CV served at "/" instead of the front page. Naming one publishes it.
+# home-profile: "jean"
+
+limits:
+  # What one CV may occupy in total: documents, portraits, journals. A CV with a
+  # photo and two languages uses well under a megabyte. This is the ceiling that
+  # stops one filling a disk — asking for four hundred languages otherwise does
+  # it in a few seconds.
+  max-profile-mb: 8
+
+  # How much room must remain free after any write. Not zero: a disk with
+  # nothing left is one where the next write of any kind fails, including the
+  # log that would say so.
+  min-free-mb: 64
+
+  max-photo-mb: 4
+
+  # Journal entries kept per CV. One entry is an episode of editing, not a
+  # keystroke: a minute of typing adds two, not forty.
+  history-entries: 500
+
+  # How long a deleted CV can still be recovered. Deletion is one click and what
+  # it destroys exists nowhere else.
+  trash-hours: 24
+
+editing:
+  # One person edits a CV at a time. These are the two ways a lease is lost.
+  #
+  # lease-ttl: the window stopped talking — closed, crashed, disconnected.
+  # inactivity: the window is still there and nothing has changed, which is a
+  #   tab left open on a second monitor. It heartbeats perfectly and would
+  #   otherwise hold the CV for ever.
+  lease-ttl: "45s"
+  inactivity: "15m"
+
+  # How long a field stays "being edited" in the journal.
+  episode-minutes: 5
+
+security:
+  # Bad links from one address before it is refused, and the window they are
+  # counted over. A VALID link is always served and clears the counter, so one
+  # person guessing cannot lock out everybody behind a shared address.
+  rate-max-failures: 10
+  rate-window-minutes: 15
+
+  # "", "off", or "subdomains". Deliberately without subdomains by default:
+  # served from an apex it would force HTTPS on every neighbour for a year, and
+  # browsers cache that.
+  hsts: ""
+
+  # Who may show these pages in an iframe.
+  frame-ancestors: "'self'"
+
+# Only needed when running from a checkout. An installed binary carries the
+# templates, the fonts and the whole interface.
+# home: "/opt/picvert"
+# data-dir: "/var/lib/picvert/data"
+# template: "material-you"

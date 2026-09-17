@@ -29,3 +29,10 @@
 # tools/bundle and COMMITTED on purpose — same rule as the font subsets above,
 # so that a checkout builds with the Go toolchain alone. CI rebuilds it and
 # fails if it differs, which is what keeps a committed artefact honest.
+
+# The real configuration. It holds the Turnstile secret and the admin password
+# hash, so it is never committed — deploy/picvert.yaml.example is the one that
+# is, with placeholders. A secret in a repository is a secret that has to be
+# rotated the moment anybody clones it.
+/picvert.yaml
+/*.local.yaml

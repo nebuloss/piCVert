@@ -68,7 +68,8 @@ var pages = template.Must(template.New("pages").
 			return "/assets/" + hashed
 		},
 	}).
-	ParseFS(web, "web/viewer.html", "web/home.html", "web/editor.html", "web/admin.html"))
+	ParseFS(web, "web/viewer.html", "web/home.html", "web/editor.html",
+		"web/admin.html", "web/login.html"))
 
 // assetHandler serves the compiled interface.
 func assetHandler(guard *security.Guard) http.Handler {
@@ -121,8 +122,13 @@ func (s *Server) sendViewer(w http.ResponseWriter, r *http.Request, data viewerD
 	s.sendHTML(w, r, security.Viewer, body)
 }
 
-func homePage(public []*profiles.Profile) string {
-	body, err := render("home.html", map[string]any{"Profiles": public})
+func homePage(public []*profiles.Profile, siteKey string) string {
+	body, err := render("home.html", map[string]any{
+		"Profiles": public,
+		// Empty means no form at all, not a form without a challenge. See
+		// newcv.go: the challenge is what makes the route safe to have.
+		"SiteKey": siteKey,
+	})
 	if err != nil {
 		return "<!doctype html><title>piCVert</title><p>" + template.HTMLEscapeString(err.Error())
 	}

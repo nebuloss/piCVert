@@ -42,6 +42,10 @@ func main() {
 		err = serveCmd(os.Args[2:])
 	case "new":
 		err = newCmd(os.Args[2:])
+	case "passwd":
+		err = passwdCmd(os.Args[2:])
+	case "config":
+		err = configCmd(os.Args[2:])
 	case "backup":
 		err = backupCmd(os.Args[2:])
 	case "restore":
@@ -93,7 +97,17 @@ func usage() {
   picvert restore --from file.tar.gz
         Puts one back. Refuses a data directory that already holds CVs.
 
+  picvert config
+        Prints what the service is configured with, and where it came from.
+
+  picvert passwd
+        Hashes a password for the administration interface.
+
   picvert version
+
+Configuration:
+  /etc/picvert.yaml, or PICVERT_CONFIG. Every setting has a working default and
+  the environment overrides the file. See deploy/picvert.yaml.example.
 
 Environment:
   PICVERT_HOME     where templates/ and fonts/ live (default: alongside the binary)

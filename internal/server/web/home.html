@@ -5,42 +5,79 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>piCVert</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<style>
-  :root { --ink: #1b1b1f; --dim: #5d5d66; --line: #e2e2e8; --bg: #f5f4f2; --accent: #2f6b4f; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex; justify-content: center; padding: 48px 20px;
-  }
-  main { max-width: 640px; width: 100%; }
-  h1 { font-size: 28px; margin: 0 0 4px; }
-  p.lede { color: var(--dim); margin: 0 0 32px; }
-  ul { list-style: none; padding: 0; margin: 0; }
-  li { border-top: 1px solid var(--line); }
-  li a {
-    display: flex; justify-content: space-between; gap: 12px;
-    padding: 14px 4px; text-decoration: none; color: inherit;
-  }
-  li a:hover { color: var(--accent); }
-  li span { color: var(--dim); font-size: 14px; }
-  .empty { border-top: 1px solid var(--line); padding: 24px 4px; color: var(--dim); }
-</style>
+<link rel="stylesheet" href="{{asset "home.css"}}">
+{{if .SiteKey}}
+<!-- Cloudflare's widget. The only thing any page here loads from outside, and
+     the front page is the only page allowed to. -->
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+{{end}}
 </head>
-<body>
+<body data-site-key="{{.SiteKey}}">
 <main>
   <h1>piCVert</h1>
   <p class="lede">A CV engine that lays the page out once.</p>
+
+  {{if .SiteKey}}
+  <form id="new" autocomplete="off">
+    <h2>Make one</h2>
+    <label>Your name
+      <input type="text" name="name" required maxlength="120" placeholder="Jean Dupont">
+    </label>
+    <label>Address
+      <span class="prefix">…/p/</span>
+      <input type="text" name="slug" required pattern="[a-z0-9][a-z0-9_-]*"
+             maxlength="60" placeholder="jean-dupont">
+    </label>
+    <label>Language
+      <input type="text" name="lang" maxlength="2" size="4" placeholder="en">
+    </label>
+
+    <!-- Rendered by the script above. Without it there is no form at all: see
+         internal/server/newcv.go for why the challenge is the thing that makes
+         this route safe rather than a box ticked on top of it. -->
+    <div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-theme="light"></div>
+
+    <button type="submit">Create my CV</button>
+    <p class="note" id="new-note"></p>
+  </form>
+
+  <!-- Replaces the form once a CV exists. The edit link is the only way into
+       it: no account, no email, nothing to recover it with. -->
+  <section id="made" hidden>
+    <h2>Done — keep this link</h2>
+    <p class="note">
+      It is the only way back into your CV. There is no account and no password:
+      whoever has this link can edit it, and nobody else can.
+    </p>
+    <div class="linkrow">
+      <input type="text" id="edit-link" readonly>
+      <button type="button" id="copy-edit">Copy</button>
+    </div>
+    <p class="note">
+      And this one shows it without allowing changes — the one to send people.
+    </p>
+    <div class="linkrow">
+      <input type="text" id="read-link" readonly>
+      <button type="button" id="copy-read">Copy</button>
+    </div>
+    <p><a id="open-editor" class="button" href="#">Start writing it</a></p>
+  </section>
+  {{end}}
+
+  {{if .Profiles}}
+  <h2>Published here</h2>
   <ul>
     {{range .Profiles}}
     <li><a href="/p/{{.Slug}}/">{{.Name}}<span>/p/{{.Slug}}/</span></a></li>
-    {{else}}
-    <p class="empty">
-      Nothing is published here. Every CV on this service is reached through its
-      own private link, which is the default and is meant to stay that way.
-    </p>
     {{end}}
   </ul>
+  {{else if not .SiteKey}}
+  <p class="empty">
+    Nothing is published here. Every CV on this service is reached through its
+    own private link, which is the default and is meant to stay that way.
+  </p>
+  {{end}}
 </main>
+<script type="module" src="{{asset "home.js"}}"></script>
 </body>
 </html>

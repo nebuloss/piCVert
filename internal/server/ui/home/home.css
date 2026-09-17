@@ -1,0 +1,64 @@
+:root {
+  --ink: #1b1b1f; --dim: #5d5d66; --line: #e2e2e8; --bg: #f5f4f2;
+  --card: #fff; --accent: #2f6b4f; --warn: #a3401f;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex; justify-content: center; padding: 48px 20px;
+}
+main { max-width: 620px; width: 100%; }
+h1 { font-size: 28px; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 32px 0 12px; }
+p.lede { color: var(--dim); margin: 0 0 28px; }
+
+form, #made {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 14px; padding: 20px 22px;
+}
+form h2, #made h2 { margin-top: 0; }
+
+label { display: block; font-size: 13px; color: var(--dim); margin-bottom: 14px; }
+label input {
+  display: block; width: 100%; font: inherit; margin-top: 4px;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
+}
+label .prefix { color: var(--dim); font-size: 12px; }
+label input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+button, .button {
+  font: inherit; padding: 9px 18px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  text-decoration: none; display: inline-block;
+}
+button:hover, .button:hover { opacity: .9; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Cloudflare sizes its own widget; this is only the room around it. */
+.cf-turnstile { margin: 4px 0 14px; }
+
+.note { font-size: 13px; color: var(--dim); margin: 10px 0; line-height: 1.5; }
+.note.error { color: var(--warn); font-weight: 600; }
+
+.linkrow { display: flex; gap: 8px; margin-bottom: 4px; }
+.linkrow input {
+  flex: 1 1 auto; font: inherit; font-size: 13px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+  color: var(--dim);
+}
+.linkrow button {
+  background: var(--card); color: var(--ink); border-color: var(--line);
+  flex: 0 0 auto;
+}
+.linkrow button:hover { border-color: var(--accent); color: var(--accent); }
+
+ul { list-style: none; padding: 0; margin: 0; }
+li { border-top: 1px solid var(--line); }
+li a {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 14px 4px; text-decoration: none; color: inherit;
+}
+li a:hover { color: var(--accent); }
+li span { color: var(--dim); font-size: 14px; }
+.empty { border-top: 1px solid var(--line); padding: 24px 4px; color: var(--dim); }

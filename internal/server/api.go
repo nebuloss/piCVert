@@ -531,6 +531,9 @@ func intList(patch map[string]any, key string) ([]int, error) {
 // because behind a reverse proxy the request's own host is the proxy's idea of
 // it and the scheme is plain HTTP whatever the world outside sees.
 func absolute(r *http.Request, path string) string {
+	if base := strings.TrimRight(os.Getenv("PICVERT_DOMAIN"), "/"); base != "" {
+		return base + path
+	}
 	if base := strings.TrimRight(os.Getenv("PICVERT_PUBLIC_URL"), "/"); base != "" {
 		return base + path
 	}

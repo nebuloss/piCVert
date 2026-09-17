@@ -46,7 +46,7 @@ func (s *Server) AdminHandler() http.Handler {
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		body, err := render("admin.html", map[string]any{
-			"PublicURL": strings.TrimRight(os.Getenv("PICVERT_PUBLIC_URL"), "/"),
+			"PublicURL": s.Config.Domain,
 		})
 		if err != nil {
 			fail(w, http.StatusInternalServerError, err)
@@ -134,6 +134,34 @@ func (s *Server) AdminHandler() http.Handler {
 		sendJSON(w, map[string]any{"ok": true, "entries": s.TrashList()})
 	})
 
+	// What the service has been doing. Counted rather than guessed, and shown
+	// on the page the administrator already has open — see internal/metrics for
+	// why each number is there.
+	mux.HandleFunc("GET /api/metrics", func(w http.ResponseWriter, r *http.Request) {
+		snapshot := s.Metrics.Snapshot()
+		profiles := s.Profiles.List()
+		var bytes int64
+		for _, p := range profiles {
+			bytes += dirSize(p.Dir)
+		}
+		sendJSON(w, map[string]any{
+			"ok": true, "metrics": snapshot,
+			"profiles":   len(profiles),
+			"bytes":      bytes,
+			"cacheBytes": s.cacheBytes(),
+			"cacheCount": s.cacheSize(),
+			"editing":    s.Leases.Count(),
+			"domain":     s.Config.Domain,
+			"policy":     s.Config.DescribeAccess(),
+			"guarded":    s.Config.Admin.Password != "",
+			"challenge":  s.Config.Turnstile.SiteKey != "",
+			"limits": map[string]any{
+				"profileMB": s.Config.Limits.MaxProfileMB,
+				"freeMB":    s.Config.Limits.MinFreeMB,
+			},
+		})
+	})
+
 	mux.HandleFunc("POST /api/trash/{slug}/restore", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.Restore(r.PathValue("slug")); err != nil {
 			fail(w, http.StatusBadRequest, err)
@@ -153,10 +181,16 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, fmt.Errorf("unknown route"))
 	})
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/login", s.adminLogin)
+	mux.HandleFunc("GET /logout", s.adminLogout)
+
+	// Everything above is behind the password, when there is one. Wrapped as a
+	// whole rather than per route: an admin interface with one unguarded route
+	// is an unguarded admin interface.
+	return s.guardAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.Guard.Base(w, r)
 		mux.ServeHTTP(w, r)
-	})
+	}))
 }
 
 func (s *Server) adminProfile(h func(http.ResponseWriter, *http.Request, *profiles.Profile)) http.HandlerFunc {
@@ -215,8 +249,8 @@ func (s *Server) inventory(r *http.Request) map[string]any {
 	}
 	return map[string]any{
 		"ok":        true,
-		"publicUrl": strings.TrimRight(os.Getenv("PICVERT_PUBLIC_URL"), "/"),
-		"policy":    s.Access.Describe(),
+		"publicUrl": s.Config.Domain,
+		"policy":    s.Config.DescribeAccess(),
 		"default":   defaultSlug,
 		"total":     len(matched),
 		"page":      page,
@@ -246,7 +280,7 @@ func (s *Server) describeProfile(p *profiles.Profile) map[string]any {
 	out := map[string]any{
 		"slug":      p.Slug,
 		"name":      name,
-		"public":    s.Access.IsPublic(p.Slug),
+		"public":    s.Config.IsPublic(p.Slug),
 		"languages": p.Languages(),
 		"bytes":     dirSize(p.Dir),
 		"history":   s.History.Size(p),
@@ -265,10 +299,12 @@ func (s *Server) describeProfile(p *profiles.Profile) map[string]any {
 // time it is mislaid, and reissuing is what breaks every copy already handed
 // out.
 func (s *Server) describeLinks(l tokens.Links) map[string]any {
-	base := strings.TrimRight(os.Getenv("PICVERT_PUBLIC_URL"), "/")
+	// Through the config's own builder, so every link this service hands out is
+	// spelt the same way — and so a domain set once produces real addresses
+	// everywhere rather than bare paths in half of them.
 	return map[string]any{
-		"edit":      base + "/e/" + l.Edit + "/edit/",
-		"read":      base + "/e/" + l.Read + "/",
+		"edit":      s.Config.LinkTo("/e/" + l.Edit + "/edit/"),
+		"read":      s.Config.LinkTo("/e/" + l.Read + "/"),
 		"createdAt": l.CreatedAt,
 	}
 }

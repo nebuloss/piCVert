@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"picvert/internal/config"
 	"picvert/internal/tokens"
 )
 
@@ -76,12 +77,14 @@ func service(t *testing.T) (*Server, string) {
 		}
 	}
 
-	t.Setenv("PICVERT_HOME", root)
-	t.Setenv("PICVERT_DATA", data)
-	t.Setenv("PICVERT_PUBLIC", "")
-	t.Setenv("PICVERT_HOME_PROFILE", "")
+	// The defaults, plus the sandbox. Stated rather than put in the
+	// environment: a test that loaded a real configuration file would pass or
+	// fail depending on what happened to be on the machine it ran on.
+	cfg := config.Defaults()
+	cfg.DataDir = data
+	cfg.Home = root
 
-	s, err := New(root)
+	s, err := New(root, cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +163,7 @@ func TestNothingIsPublicByDefault(t *testing.T) {
 		t.Fatalf("an unnamed CV answered %d, want 404", got)
 	}
 	// Named, and it opens. The rule is a setting, not an accident.
-	t.Setenv("PICVERT_PUBLIC", slug)
+	s.Config.Access.Public = []string{slug}
 	if got := call(t, h, "GET", "/p/"+slug+"/", nil, nil).Code; got != http.StatusOK {
 		t.Fatalf("a published CV answered %d, want 200", got)
 	}
@@ -413,7 +416,7 @@ func TestRotatingALinkInvalidatesTheOldOne(t *testing.T) {
 func TestTheCVCarriesAContentPolicyThatAllowsItsOwnFonts(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
-	t.Setenv("PICVERT_PUBLIC", slug)
+	s.Config.Access.Public = []string{slug}
 
 	w := call(t, h, "GET", "/p/"+slug+"/cv.html", nil, nil)
 	if w.Code != http.StatusOK {

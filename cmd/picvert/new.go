@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
 
 	"picvert/internal/server"
 )
@@ -28,11 +27,15 @@ func newCmd(args []string) error {
 		return fmt.Errorf("--slug is required")
 	}
 
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
 	root, err := home()
 	if err != nil {
 		return err
 	}
-	s, err := server.New(root)
+	s, err := server.New(root, cfg, version)
 	if err != nil {
 		return err
 	}
@@ -48,15 +51,15 @@ func newCmd(args []string) error {
 		return err
 	}
 
-	base := os.Getenv("PICVERT_PUBLIC_URL")
 	fmt.Printf("created %s in %s\n\n", p.Slug, p.Dir)
 	// The edit link is the ONLY way into the CV just made. Printed first and
 	// printed whole: somebody who loses this line has made something nobody can
 	// open, and there is no account to recover it through.
-	fmt.Printf("  edit  %s/e/%s/edit/\n", base, links.Edit)
-	fmt.Printf("  read  %s/e/%s/\n", base, links.Read)
-	if base == "" {
-		fmt.Printf("\n(PICVERT_PUBLIC_URL is not set, so those are paths rather than links.)\n")
+	fmt.Printf("  edit  %s\n", cfg.LinkTo("/e/"+links.Edit+"/edit/"))
+	fmt.Printf("  read  %s\n", cfg.LinkTo("/e/"+links.Read+"/"))
+	if cfg.Domain == "" {
+		fmt.Printf("\nThose are paths, not addresses: set `domain` in the " +
+			"configuration\nand they come out as links somebody can open.\n")
 	}
 	return nil
 }

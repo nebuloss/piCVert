@@ -265,6 +265,37 @@ export interface InventoryAnswer extends Answer {
   profiles: ProfileSummary[];
 }
 
+/** What the service has been doing. See internal/metrics for why each is here. */
+export interface MetricsAnswer extends Answer {
+  metrics: {
+    version: string;
+    uptimeSec: number;
+    requests: number;
+    renders: number;
+    pdfs: number;
+    saves: number;
+    errors: number;
+    conflicts: number;
+    refused: number;
+    cacheHits: number;
+    cacheMisses: number;
+    cacheRatio: number;
+    renderMedianMs: number;
+    renderSlowMs: number;
+    lastBackup?: string;
+  };
+  profiles: number;
+  bytes: number;
+  cacheBytes: number;
+  cacheCount: number;
+  editing: number;
+  domain: string;
+  policy: string;
+  guarded: boolean;
+  challenge: boolean;
+  limits: { profileMB: number; freeMB: number };
+}
+
 export interface TrashEntry {
   slug: string;
   name: string;

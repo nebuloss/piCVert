@@ -60,6 +60,8 @@ var entries = []string{
 	"viewer/viewer.css",
 	"admin/admin.ts",
 	"admin/admin.css",
+	"home/home.ts",
+	"home/home.css",
 }
 
 // names maps an entry point to the name the templates use.
@@ -70,6 +72,8 @@ var names = map[string]string{
 	"viewer/viewer.css": "viewer.css",
 	"admin/admin.ts":    "admin.js",
 	"admin/admin.css":   "admin.css",
+	"home/home.ts":      "home.js",
+	"home/home.css":     "home.css",
 }
 
 func main() {

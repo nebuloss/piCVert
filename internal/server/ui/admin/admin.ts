@@ -13,7 +13,7 @@ import { HttpClient } from '../lib/http.ts';
 import { copy, el, need, replace } from '../lib/dom.ts';
 import type { Child } from '../lib/dom.ts';
 import type {
-  AdminTemplatesAnswer, CreateAnswer, InventoryAnswer,
+  AdminTemplatesAnswer, CreateAnswer, InventoryAnswer, MetricsAnswer,
   ProfileSummary, TrashAnswer, TrashEntry,
 } from '../model/api.ts';
 
@@ -30,6 +30,86 @@ const show = {
     return Number.isNaN(date.valueOf()) ? stamp : date.toLocaleString();
   },
 };
+
+/**
+ * MetricsPanel is what the service has been doing.
+ *
+ * Every number here answers a question an administrator actually asks — is it
+ * busy, is the cache doing anything, is somebody attacking it, when was the
+ * last backup. A panel of numbers nobody would act on is worse than none,
+ * because it looks like observability while saying nothing.
+ */
+class MetricsPanel {
+  constructor(private readonly node: HTMLElement, private readonly api: HttpClient) {}
+
+  async refresh(): Promise<void> {
+    let answer: MetricsAnswer;
+    try {
+      answer = await this.api.get<MetricsAnswer>('/api/metrics');
+    } catch (error) {
+      replace(this.node, [el('div', { class: 'empty',
+        text: error instanceof Error ? error.message : String(error) })]);
+      return;
+    }
+    const m = answer.metrics;
+
+    // Warnings first, because they are the reason to look. Each is a thing
+    // somebody would do something about today.
+    const warnings: Child[] = [];
+    if (!answer.domain) {
+      warnings.push(this.warn(
+        'No domain configured — the links below are paths, not addresses.'));
+    }
+    if (!answer.guarded) {
+      warnings.push(this.warn(
+        'This port has no password. It is protected only by not being reachable.'));
+    }
+    if (!m.lastBackup) {
+      warnings.push(this.warn('No backup has been taken since this service started.'));
+    }
+    if (answer.bytes > answer.limits.profileMB * answer.profiles * 1024 * 1024 * 0.8) {
+      warnings.push(this.warn('The CVs are near their combined ceiling.'));
+    }
+
+    replace(this.node, [
+      ...warnings,
+      el('div', { class: 'metrics' }, [
+        this.stat('CVs', String(answer.profiles), show.bytes(answer.bytes)),
+        this.stat('being edited', String(answer.editing), 'right now'),
+        this.stat('pages drawn', String(m.renders),
+          `${m.renderMedianMs.toFixed(0)} ms typical, ${m.renderSlowMs.toFixed(0)} ms slow`),
+        this.stat('PDFs', String(m.pdfs), `${m.saves} saves`),
+        this.stat('cache', `${Math.round(m.cacheRatio * 100)}%`,
+          `${answer.cacheCount} pages, ${show.bytes(answer.cacheBytes)}`),
+        this.stat('refused', String(m.refused),
+          `${m.conflicts} conflicts, ${m.errors} errors`),
+        this.stat('uptime', duration(m.uptimeSec), `version ${m.version}`),
+        this.stat('last backup', m.lastBackup ? show.when(m.lastBackup) : '—',
+          m.lastBackup ? '' : 'none this session'),
+      ]),
+    ]);
+  }
+
+  private warn(text: string): HTMLElement {
+    return el('div', { class: 'warning', text });
+  }
+
+  private stat(label: string, value: string, note: string): HTMLElement {
+    return el('div', { class: 'stat' }, [
+      el('div', { class: 'stat-value', text: value }),
+      el('div', { class: 'stat-label', text: label }),
+      note ? el('div', { class: 'stat-note', text: note }) : null,
+    ]);
+  }
+}
+
+/** duration reads a number of seconds as something a person would say. */
+function duration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86400)}d`;
+}
 
 /** table builds a headed table, since both halves of this page are one. */
 function table(headings: string[], rows: HTMLElement[]): HTMLElement {
@@ -257,6 +337,7 @@ class Admin {
   private readonly count: HTMLElement;
   private readonly policy: HTMLElement;
   private readonly create: HTMLElement;
+  private readonly metrics: MetricsPanel;
 
   private page = 1;
 
@@ -267,6 +348,8 @@ class Admin {
     this.count = need(root, '#count');
     this.policy = need(root, '#policy');
     this.create = need(root, '#create');
+
+    this.metrics = new MetricsPanel(need(root, '#metrics'), this.api);
 
     this.profiles = new ProfileTable(this.list, {
       rotate: (p) => void this.act(
@@ -305,6 +388,10 @@ class Admin {
     this.create.appendChild(new CreateForm(this.api, () => void this.refresh()).render());
     void this.refresh();
     void this.refreshTrash();
+    void this.metrics.refresh();
+    // Every thirty seconds. Often enough to watch something happen, rarely
+    // enough that a page left open all day is not a load in itself.
+    window.setInterval(() => void this.metrics.refresh(), 30_000);
   }
 
   /** act performs something destructive, asks first, and refreshes after. */

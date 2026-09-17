@@ -278,8 +278,23 @@ func (g *Guard) Policy(kind Kind) string {
 			"script-src 'self'; connect-src 'self'; frame-src 'self'; " +
 			"font-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors " + frame
 	default:
-		return "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
-			"script-src 'self'; connect-src 'self'; " +
+		// The front page, and the ONLY page allowed to load anything from
+		// outside — Cloudflare's challenge, and only Cloudflare's.
+		//
+		// Turnstile does not merely load a script: it brings its own styles,
+		// its own images and an iframe. Too narrow a policy lets it announce
+		// itself with an incomplete API, which fails in ways that take an
+		// afternoon to trace back to a header. So its domain is allowed
+		// everywhere it needs, and nothing else is allowed anywhere.
+		//
+		// The CV itself stays hermetic: it is a different kind of page, with a
+		// different policy, and nothing about this reaches it.
+		const cf = "https://challenges.cloudflare.com"
+		return "default-src 'none'; img-src 'self' data: " + cf + "; " +
+			"style-src 'self' 'unsafe-inline' " + cf + "; " +
+			"script-src 'self' " + cf + "; " +
+			"connect-src 'self' " + cf + "; " +
+			"frame-src " + cf + "; " +
 			"base-uri 'none'; form-action 'none'; frame-ancestors " + frame
 	}
 }
