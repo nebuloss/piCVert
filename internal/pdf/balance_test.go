@@ -1,12 +1,35 @@
 package pdf
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
 	"picvert/internal/layout"
 )
+
+// checkout is the repository root, found by the file that marks it.
+func checkout(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 6 {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		up := filepath.Dir(dir)
+		if up == dir {
+			break
+		}
+		dir = up
+	}
+	t.Fatal("cannot find the checkout root")
+	return ""
+}
 
 // Every `q` must have its `Q`.
 //
@@ -86,5 +109,64 @@ func TestEllipsesAreRound(t *testing.T) {
 	}
 	if !strings.Contains(ops, " c\n") {
 		t.Errorf("no curve operators: the dot has no rounded corners:\n%s", ops)
+	}
+}
+
+// Character spacing must not leak out of the text object that set it.
+//
+// `Tc` is TEXT STATE, not part of a text object: `ET` ends the object and
+// resets the text matrix, and leaves `Tc` exactly as it was. Written only when
+// non-zero — which looks like a sensible economy — a section title's
+// letter-spacing carried on into every paragraph drawn after it. At 0.6 pt a
+// character, a thirty-character run came out twenty points wider than the
+// engine measured it and was drawn straight over the run beside it.
+//
+// The fault is invisible to every check that READS the PDF: the text extracts
+// perfectly, because extraction does not care where the glyphs landed. Only
+// looking at the page shows it, which is why this test looks at the operators
+// rather than at the words.
+func TestCharacterSpacingDoesNotLeakBetweenRuns(t *testing.T) {
+	spaced := layout.Para(layout.Style{
+		Display: layout.Text, Family: "Roboto", Size: 10, Letter: 0.8,
+	}, "A SECTION TITLE")
+	plain := layout.Para(layout.Style{
+		Display: layout.Text, Family: "Roboto", Size: 10,
+	}, "A paragraph that follows it and sets no spacing of its own")
+	page := layout.Box(layout.Style{Display: layout.Block, Width: 400, Height: 200},
+		spaced, plain)
+	// The real face, because a painter with no face draws nothing at all and
+	// the check would pass by having nothing to look at.
+	file := filepath.Join(checkout(t), "fonts", "Roboto-Regular.ttf")
+	fonts := layout.NewFonts()
+	if err := fonts.Load("Roboto", 400, false, file); err != nil {
+		t.Fatal(err)
+	}
+	face, err := LoadFace("", "Roboto", 400, false, file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := layout.NewEngine(fonts).Layout(page, 400, 200)
+
+	p := NewPainter([]*Face{face}, 200)
+	p.images = map[string]string{}
+	frame.Paint(p)
+
+	// Every text object states the spacing it wants, so none of them inherits
+	// one. Checked per object rather than by counting, because "some of them
+	// set it" is exactly the state that produced the fault.
+	objects := regexp.MustCompile(`(?s)BT\n(.*?)ET`).FindAllStringSubmatch(p.ops.String(), -1)
+	if len(objects) < 2 {
+		t.Fatalf("expected a text object per run, got %d", len(objects))
+	}
+	for i, object := range objects {
+		body := object[1]
+		// An object that draws nothing has nothing to get wrong.
+		if !strings.Contains(body, " Tj") {
+			continue
+		}
+		if !strings.Contains(body, " Tc") {
+			t.Errorf("text object %d draws without stating its character spacing, "+
+				"so it inherits whatever the last one left:\n%s", i, body)
+		}
 	}
 }

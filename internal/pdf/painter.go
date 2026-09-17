@@ -463,9 +463,18 @@ func (p *Painter) Text(f *layout.Frame) {
 			p.ops.WriteString("BT\n")
 			if p.setFill(orElse(s.ColourOf(piece.Bold, piece.Colour), "#000000")) {
 				fmt.Fprintf(&p.ops, "/%s %s Tf\n", face.Name, num(pt(s.Size)))
-				if s.Letter != 0 {
-					fmt.Fprintf(&p.ops, "%s Tc\n", num(pt(s.Letter)))
-				}
+				// ALWAYS, even at zero. Character spacing is TEXT STATE, not
+				// part of the text object: ET ends the object and resets the
+				// matrix, and leaves Tc exactly where it was. Written only when
+				// non-zero, a section title's letter-spacing carried on into
+				// every paragraph drawn after it — 0.6 pt per character, which
+				// on a thirty-character run is twenty points of width the
+				// engine never measured, drawn straight over the run beside it.
+				//
+				// Nothing about this shows up in the extracted text, so it
+				// survived every check that read the PDF rather than looked at
+				// it.
+				fmt.Fprintf(&p.ops, "%s Tc\n", num(pt(s.Letter)))
 				fmt.Fprintf(&p.ops, "1 0 0 1 %s %s Tm\n", num(x), num(baseline))
 				fmt.Fprintf(&p.ops, "<%s> Tj\n", face.Encode(piece.Text))
 			}

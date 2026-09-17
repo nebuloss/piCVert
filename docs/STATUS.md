@@ -108,6 +108,13 @@ Recorded because each cost real time and none is obvious from the code.
 - **A subsetter renumbers glyphs.** Encoding text against one font file and
   embedding another produces a page of plausible gibberish, with the metrics
   still correct because the widths came from the same wrong indices.
+- **PDF text state outlives the text object that set it.** `BT`/`ET` resets the
+  text matrix and nothing else, so `Tc` — character spacing — written only when
+  non-zero leaked out of every section title into the paragraphs after it. At
+  0.6 pt a character, a thirty-character run came out twenty points wider than
+  it was measured and was drawn over the run beside it. Nothing that READS a
+  PDF can see this: the text extracts perfectly, because extraction does not
+  care where the glyphs landed.
 - **An unmatched `q` in a PDF is not an error.** It leaves the graphics state
   pushed, so a clip applies to everything drawn afterwards. No reader complains;
   the page simply comes out mostly missing.
