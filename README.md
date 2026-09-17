@@ -147,6 +147,20 @@ files, and drawing it in whatever the reader happens to have installed would
 move every break away from where it was measured. Subsetted and woff2-compressed,
 the four faces cost 52 KB — a sixth of the portrait already in the file.
 
+## How it is put together
+
+One layout engine, many outputs. Emitters implement a `Painter` and receive the
+finished frame; the traversal lives in one place, because that is where the
+subtle work is and every emitter that re-derived it would be a chance to derive
+it differently.
+
+Each display kind is a `Layouter` registered by name — so `row` and `row-wrap`
+share one type, being one algorithm with one flag, and a kind in the vocabulary
+with no implementation fails at startup rather than measuring as nothing.
+
+Which patterns are used where, and which are deliberately absent and why:
+[`docs/DESIGN.md`](docs/DESIGN.md).
+
 ## State
 
 Working: the layout engine, text measurement and breaking, the HTML emitter,
