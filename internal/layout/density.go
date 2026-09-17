@@ -1,5 +1,7 @@
 package layout
 
+import "math"
+
 // Density is how tightly a page is set.
 //
 // # WHY THE ENGINE SETS THE SPACING RATHER THAN THE AUTHOR
@@ -101,15 +103,30 @@ func (f Fitted) Spread() (lo, hi float64) {
 	return lo, hi
 }
 
-// LayoutFitted lays the page out at the spacing that brings each column to the
-// foot of the page.
+// LayoutFitted lays the page out so that its columns end level, at the foot of
+// the page.
 //
-// Searched rather than solved for, because the relationship between spacing and
-// height is not continuous: closing a gap by a pixel can remove a line from a
-// paragraph three cards down, or nothing at all. It is monotone ENOUGH — looser
-// is taller, near enough, near enough of the time — for halving the interval to
-// land somewhere sensible, and every candidate is checked properly before it is
-// kept, so a search that is misled still cannot return a page that overflows.
+// # TWO PASSES, AND THE SECOND ONE IS THE POINT
+//
+// Bringing each column to the page foot independently is not enough. Columns
+// stop where their own line breaks let them, so one lands a pixel short of the
+// bottom and its neighbour eleven — and eleven pixels of difference between two
+// columns is exactly the ragged edge a reader sees as unfinished, even though
+// neither column is anywhere near overflowing.
+//
+// So the first pass asks how far down each column CAN reach, and the second
+// asks every column to stop at the same line: the shallowest of those maxima,
+// since a column cannot be asked to reach past its own. The result is a page
+// whose two columns end together.
+//
+// # WHY IT IS SEARCHED RATHER THAN SOLVED FOR
+//
+// The relationship between spacing and height is not continuous: closing a gap
+// by a pixel can remove a line from a paragraph three cards down, or nothing at
+// all. It is monotone ENOUGH — looser is taller, near enough, near enough of the
+// time — for halving the interval to land somewhere sensible, and every
+// candidate is checked properly before it is kept, so a search that is misled
+// still cannot return a page that overflows.
 func (e *Engine) LayoutFitted(build func() *Node, pageWidth, pageHeight, usable float64, regions int) Fitted {
 	at := func(scales []float64, text float64) (*Frame, []float64) {
 		root := build()
@@ -127,42 +144,125 @@ func (e *Engine) LayoutFitted(build func() *Node, pageWidth, pageHeight, usable 
 	var last *Frame
 	var lastDensity Density
 	for _, text := range textLadder {
-		lo, hi := repeat(regions, tightestSpacing), repeat(regions, loosestSpacing)
-
 		// The floor is the test of whether this type size can work at all: if
 		// the page overflows with every gap closed as far as it will go, no
 		// setting above the floor will help.
-		floor, bottoms := at(lo, text)
-		last, lastDensity = floor, Density{Regions: clone(lo), Text: text}
+		floorScales := repeat(regions, tightestSpacing)
+		floor, bottoms := at(floorScales, text)
+		last, lastDensity = floor, Density{Regions: floorScales, Text: text}
 		if !within(bottoms, usable) || floor.Collides() {
 			continue
 		}
 
-		best, bestScales := floor, clone(lo)
-		for range refinements {
-			mid := midpoint(lo, hi)
-			frame, bottoms := at(mid, text)
-			// Two conditions, not one. Spacing closed far enough will always
-			// make a page "fit", by running its lines into one another, and a
-			// page that fits by collapsing is worse than one that honestly
-			// reports being too long, because it looks finished.
-			if within(bottoms, usable) && !frame.Collides() {
-				best, bestScales = frame, clone(mid)
-			}
-			// Each column moves its OWN bound, so one layout advances every
-			// column's search at once — which is why this costs nine layouts
-			// and not nine per column.
-			for i := range mid {
-				if bottoms[i] <= usable {
-					lo[i] = mid[i]
-				} else {
-					hi[i] = mid[i]
-				}
-			}
+		// Pass one: how far down can each column reach without overflowing?
+		reach := e.seek(at, text, regions, usable, repeat(regions, usable))
+		// Pass two: everyone stops at the shallowest of those. Asking for more
+		// would ask a column to reach past its own maximum, and it would simply
+		// sit at its ceiling while the others overshot.
+		level := repeat(regions, lowest(reach.bottoms))
+		aligned := e.seek(at, text, regions, usable, level)
+
+		best := aligned
+		if best.frame == nil {
+			best = reach
 		}
-		return Fitted{Frame: best, Density: Density{Regions: bestScales, Text: text}, Fits: true}
+		if best.frame == nil {
+			best = attempt{frame: floor, scales: floorScales}
+		}
+		return Fitted{Frame: best.frame,
+			Density: Density{Regions: best.scales, Text: text}, Fits: true}
 	}
 	return Fitted{Frame: last, Density: lastDensity, Fits: false}
+}
+
+// attempt is the best setting a search found, and what it produced.
+type attempt struct {
+	frame   *Frame
+	scales  []float64
+	bottoms []float64
+}
+
+// seek sets each column's spacing so its foot lands as near its target as it
+// can, without overflowing and without its lines touching.
+//
+// Every column is searched in the SAME layouts: each moves its own half of the
+// interval, so one pass of the engine advances all of them. That is why aligning
+// two columns costs the same as fitting one.
+func (e *Engine) seek(
+	at func([]float64, float64) (*Frame, []float64),
+	text float64, regions int, usable float64, target []float64,
+) attempt {
+	lo, hi := repeat(regions, tightestSpacing), repeat(regions, loosestSpacing)
+	best := attempt{}
+	// distance is how far each column ended from where it was asked to end.
+	// Kept per column rather than as one number for the page, because the
+	// columns are independent: a setting that improves the left one must be
+	// kept for the left one whatever it did to the right.
+	distance := repeat(regions, math.Inf(1))
+
+	for range refinements {
+		mid := midpoint(lo, hi)
+		frame, bottoms := at(mid, text)
+
+		// Two conditions, not one. Spacing closed far enough will always make a
+		// page "fit", by running its lines into one another, and a page that
+		// fits by collapsing is worse than one that honestly reports being too
+		// long, because it looks finished.
+		if within(bottoms, usable) && !frame.Collides() {
+			improved := false
+			for i := range mid {
+				if d := math.Abs(bottoms[i] - target[i]); d < distance[i] {
+					distance[i] = d
+					if best.scales == nil {
+						best.scales = clone(mid)
+					}
+					best.scales[i] = mid[i]
+					improved = true
+				}
+			}
+			// The frame is only kept when it is the one every column settled
+			// on. Otherwise the scales recorded above describe a page that was
+			// never laid out, and it is laid out once at the end instead.
+			if improved {
+				best.frame, best.bottoms = frame, clone(bottoms)
+			}
+		}
+
+		for i := range mid {
+			// Short of the mark means loosen, past it means tighten — and past
+			// the page itself always means tighten, whatever the target said.
+			if bottoms[i] > usable || bottoms[i] > target[i] {
+				hi[i] = mid[i]
+			} else {
+				lo[i] = mid[i]
+			}
+		}
+	}
+
+	// The per-column winners rarely came from one layout, so the combination is
+	// drawn once and checked. If that combination is worse than any single
+	// attempt — which the discontinuities make possible — the honest answer is
+	// the attempt that was actually measured.
+	if best.scales != nil {
+		frame, bottoms := at(best.scales, text)
+		if within(bottoms, usable) && !frame.Collides() {
+			best.frame, best.bottoms = frame, bottoms
+		}
+	}
+	return best
+}
+
+// lowest is the shallowest foot among the columns: the deepest line every
+// column can be asked to reach.
+func lowest(bottoms []float64) float64 {
+	if len(bottoms) == 0 {
+		return 0
+	}
+	out := bottoms[0]
+	for _, b := range bottoms[1:] {
+		out = min(out, b)
+	}
+	return out
 }
 
 // applyDensity sets a tree's spacing before it is measured.

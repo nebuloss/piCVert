@@ -149,11 +149,18 @@ over, and you are told to cut a sentence, or it stops short, and the page ends i
 a band of white that says the document ran out rather than that it finished.
 Both hand the design's problem to whoever wrote the text.
 
-So the engine searches for the spacing that brings each column to the foot of the
-page — opening the gaps up on a short CV as readily as closing them on a long
-one. Each column is set separately, because one rhythm cannot fill two columns
-holding different amounts of text, and that is exactly what leaves a page ragged
-along the bottom.
+So the engine searches for the spacing that brings the columns down to the foot
+of the page **together** — opening the gaps up on a short CV as readily as
+closing them on a long one. Each column is set separately, because one rhythm
+cannot fill two columns holding different amounts of text; then every column is
+asked to stop on the same line, because a column ending eleven pixels above its
+neighbour is the ragged edge a reader sees as unfinished even though neither is
+close to overflowing.
+
+```
+each column to the page foot:    left  +1.3 px    right +11.6 px
+the columns level with each other: left +11.9 px  right +11.6 px
+```
 
 What gives, and in what order: gaps, margins and padding first, always; type size
 only when spacing alone cannot bring the page home, because a CV set at 92 % looks
