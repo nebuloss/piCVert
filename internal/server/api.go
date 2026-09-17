@@ -213,7 +213,27 @@ func (s *Server) api() http.Handler {
 		// token is what the caller already holds, and echoing it would put it
 		// into every log and cache between here and the browser a second time
 		// for nothing.
-		sendJSON(w, map[string]any{"ok": true, "read": "/e/" + links.Read + "/"})
+		sendJSON(w, map[string]any{
+			"ok":   true,
+			"read": absolute(r, "/e/"+links.Read+"/"),
+		})
+	}))
+
+	// Deleting your own CV, from your own CV.
+	//
+	// It belongs HERE and not only on the admin port: the person holding the
+	// edit link is, for a self-service CV, its author and the only person with
+	// any claim on it. Making them ask an administrator to remove their own
+	// data is the arrangement this service exists to avoid.
+	//
+	// It is set aside rather than destroyed — see Server.Trash — because this
+	// is one click and what it removes exists nowhere else.
+	mux.HandleFunc("DELETE /api/p/{slug}", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		if err := s.Trash(p); err != nil {
+			fail(w, http.StatusInternalServerError, err)
+			return
+		}
+		sendJSON(w, map[string]any{"ok": true, "slug": p.Slug, "grace": s.graceHours()})
 	}))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -434,4 +454,25 @@ func intList(patch map[string]any, key string) ([]int, error) {
 		out[i] = int(n)
 	}
 	return out, nil
+}
+
+// absolute turns a path into a link someone can paste into a message.
+//
+// A relative path is no use: the whole point of asking for the read link is to
+// hand it to somebody else. PICVERT_PUBLIC_URL is preferred when it is set,
+// because behind a reverse proxy the request's own host is the proxy's idea of
+// it and the scheme is plain HTTP whatever the world outside sees.
+func absolute(r *http.Request, path string) string {
+	if base := strings.TrimRight(os.Getenv("PICVERT_PUBLIC_URL"), "/"); base != "" {
+		return base + path
+	}
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	return scheme + "://" + host + path
 }

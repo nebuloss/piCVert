@@ -257,6 +257,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"ok": true, "profiles": len(s.Profiles.List())})
 	})
+
+	// Crawlers are kept off the private surface, and off the artefacts.
+	//
+	// THIS IS A PRIVACY MEASURE, not housekeeping. A /e/<token> address that
+	// reaches a crawler is a CV in a search index, and the link was the only
+	// thing keeping it private — the person who shared it with one recruiter
+	// would have shared it with everyone. Nothing links to those addresses, but
+	// a browser extension, a referrer or a pasted URL is enough, and the cost of
+	// saying so is four lines.
+	//
+	// Published CVs are deliberately left crawlable: publishing one is an
+	// explicit request to be found.
+	mux.HandleFunc("GET /robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write([]byte("User-agent: *\nDisallow: /e/\nDisallow: /api/\n"))
+	})
+
 	icon := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.Header().Set("Cache-Control", "public, max-age=86400")
@@ -362,6 +380,11 @@ func (s *Server) shareRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Guard.RecordSuccess(security.ClientIP(r))
+
+	// Belt as well as braces. robots.txt is a request a crawler may ignore and
+	// some do; this header is the one they honour, and it is the difference
+	// between a CV shared with one recruiter and a CV in a search index.
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
 
 	p, err := s.Profiles.Get(grant.Slug)
 	if err != nil {

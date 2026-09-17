@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -56,6 +57,52 @@ func (s *Server) AdminHandler() http.Handler {
 
 	mux.HandleFunc("GET /api/profiles", func(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, s.inventory(r))
+	})
+
+	// Making a CV is an ADMIN act, not a public one. A public creation route is
+	// a route strangers fill a disk through, and it needs a quota, a rate limit
+	// and a challenge before it is safe — none of which this service has. Until
+	// it does, new CVs come from the port that is not proxied outwards.
+	mux.HandleFunc("POST /api/profiles", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Slug     string `json:"slug"`
+			Name     string `json:"name"`
+			Template string `json:"template"`
+			Lang     string `json:"lang"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil {
+			fail(w, http.StatusBadRequest, err)
+			return
+		}
+		if _, err := s.Store.Create(body.Slug, body.Name, body.Template, body.Lang); err != nil {
+			fail(w, http.StatusBadRequest, err)
+			return
+		}
+		p, err := s.Profiles.Get(body.Slug)
+		if err != nil {
+			fail(w, http.StatusInternalServerError, err)
+			return
+		}
+		// The links come back with the creation. They are the only way into the
+		// CV that was just made, and a second call to fetch them is a second
+		// chance to end up with a CV nobody can open.
+		sendJSON(w, map[string]any{"ok": true, "profile": s.describeProfile(p)})
+	})
+
+	mux.HandleFunc("GET /api/templates", func(w http.ResponseWriter, r *http.Request) {
+		all, err := s.Registry.All()
+		if err != nil {
+			fail(w, http.StatusInternalServerError, err)
+			return
+		}
+		out := make([]map[string]any, 0, len(all))
+		for _, t := range all {
+			out = append(out, map[string]any{
+				"uuid": t.UUID, "name": t.Name, "title": t.Title,
+				"description": t.Description,
+			})
+		}
+		sendJSON(w, map[string]any{"ok": true, "templates": out})
 	})
 
 	mux.HandleFunc("GET /view/{slug}/cv.html", s.adminProfile(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
@@ -188,9 +235,17 @@ func clampQuery(r *http.Request, key string, fallback, low, high int) int {
 
 func (s *Server) describeProfile(p *profiles.Profile) map[string]any {
 	links, _ := s.Tokens.ForProfile(p.Slug)
+	// Read here rather than trusted from the profile: List() fills in the name
+	// and Get() does not, so a profile that arrived by either route describes
+	// itself the same way. It came back blank from the creation route once,
+	// which is the moment the name matters most.
+	name := p.Name
+	if name == "" {
+		name = nameOf(p)
+	}
 	out := map[string]any{
 		"slug":      p.Slug,
-		"name":      p.Name,
+		"name":      name,
 		"public":    s.Access.IsPublic(p.Slug),
 		"languages": p.Languages(),
 		"bytes":     dirSize(p.Dir),

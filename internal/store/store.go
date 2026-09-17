@@ -69,9 +69,16 @@ func (s *Store) Read(slug, lang string) (document.Doc, error) {
 // FIRST and validated second — never the other way round, or a document written
 // by an older version would be rejected for being old rather than wrong.
 func (s *Store) Write(slug string, input any, lang string) (document.Doc, error) {
-	p, err := s.Profiles.Get(slug)
+	// The DIRECTORY, not the document. A profile being created has a folder and
+	// no cv.json yet, and requiring the document here would mean creation could
+	// not come through this door — which is how a second write path comes to
+	// exist, skipping validation and the journal because it had to.
+	p, err := s.Profiles.For(slug)
 	if err != nil {
 		return nil, err
+	}
+	if _, err := os.Stat(p.Dir); err != nil {
+		return nil, fmt.Errorf("unknown CV: %q", slug)
 	}
 	doc, ok := document.AsObject(document.Upgrade(input))
 	if !ok {

@@ -33,6 +33,8 @@ func main() {
 		err = pdfCmd(os.Args[2:])
 	case "serve":
 		err = serveCmd(os.Args[2:])
+	case "new":
+		err = newCmd(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -67,10 +69,18 @@ func usage() {
         Serves every profile: viewer, editor, private links, and an admin
         interface on its own port.
 
+  picvert new --slug <name> [--name "Full Name"] [--lang xx] [--template t]
+        Creates a CV and prints its two private links. Those links are the
+        only way into it.
+
 Environment:
   PICVERT_HOME     where templates/ and fonts/ live (default: alongside the binary)
   PICVERT_DATA     where profiles live             (default: <home>/data)
   PICVERT_PUBLIC   which profiles are readable without a link (default: none)
+  PICVERT_ADDR     public address       (default: 127.0.0.1:3000)
+  PICVERT_ADMIN_ADDR  admin address, unproxied (default: 127.0.0.1:3001)
+
+See deploy/picvert.env.example for the rest.
 `)
 }
 
