@@ -57,6 +57,7 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           version="${GITHUB_REF_NAME#v}"
+          echo "Building $version"
           mkdir -p dist
           build() {  # <goos> <goarch> <suffix> [goarm]
             GOOS="$1" GOARCH="$2" GOARM="${4:-}" go build \
@@ -84,9 +85,21 @@ jobs:
       # The installer fetches an executable over the network and runs it as
       # root. Publishing the digests lets somebody check that what arrived is
       # what was built here, which costs one file.
+      # Every file the release publishes, including the installer — which is
+      # the one somebody pipes into a shell, and therefore the one most worth
+      # being able to check.
       - name: Checksums
         working-directory: dist
-        run: sha256sum picvert-* > SHA256SUMS
+        run: sha256sum picvert-* install.sh > SHA256SUMS
+
+      # The binary must report the tag it was built from. A release that says
+      # "dev" is one nobody can match to a commit when something goes wrong.
+      - name: The version is stamped
+        run: |
+          got=$(./dist/picvert-linux-amd64 version)
+          want="picvert ${GITHUB_REF_NAME#v}"
+          [ "$got" = "$want" ] || { echo "reports '$got', expected '$want'"; exit 1; }
+          echo "$got"
 
       - name: Release
         uses: softprops/action-gh-release@v2

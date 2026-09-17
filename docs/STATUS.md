@@ -66,10 +66,10 @@ pending — a CV has one author, and a merge would cost far more than it is
 worth here. What is genuinely absent is any way for the two to see each other's
 changes: the waiting one polls, and nothing is pushed.
 
-**Anything self-service.** A CV is created from the admin port or the command
-line. A public creation route needs a quota, a per-address limit and a
-challenge before it is safe to expose, and none of that is written — so it is
-not exposed.
+**Monitoring beyond the admin page.** There is no dashboard to point a
+monitoring stack at and nothing pages anybody. The numbers are counted and
+shown where the administrator already is, which is the right answer for one
+machine and the wrong one for a fleet.
 
 **Arcs in SVG icon paths.** The translator handles move, line, cubic and close —
 what a material icon is made of. An icon set using `A` would draw nothing rather
@@ -153,11 +153,12 @@ Recorded because each cost real time and none is obvious from the code.
 
 1. **A golden-file test for the PDF**, comparing a rendered page against a
    checked-in raster rather than against my reading of a screenshot.
-2. **Arc support** in the SVG path translator, so an icon set outside the
+2. **Tests for the interface.** It is driven end to end by hand over the
+   debugging protocol — typing, saving, deleting, two windows at once — and
+   those probes are not in the repository. The types catch shape errors;
+   nothing yet catches a behavioural one automatically.
+3. **Arc support** in the SVG path translator, so an icon set outside the
    material family renders.
-3. **Self-service**, if this is ever opened to strangers: quota, per-address
-   creation limit, challenge.
-4. **Tests for the interface.** It is driven end to end by hand over the
-   debugging protocol — typing, saving, deleting — and that probe is not in the
-   repository. The types catch the shape errors; nothing yet catches a
-   behavioural one automatically.
+4. **Metrics somewhere other than the admin page**, if this ever runs where
+   something scrapes them. The counters are already kept apart from the
+   handlers for that reason; only the output format would change.
