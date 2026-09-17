@@ -111,8 +111,16 @@ func previewCmd(args []string) error {
 	mux.HandleFunc("GET /favicon.ico", icon)
 	mux.HandleFunc("GET /favicon.svg", icon)
 
-	log.Printf("piCVert preview on http://%s  (rebuilt on every reload)", *addr)
-	log.Printf("  /         the page")
+	// Which template this instance draws with, said out loud. Two previews of
+	// the same CV in different templates are indistinguishable from their URLs,
+	// and half an hour went into a rendering fault that was a tab pointed at
+	// the wrong port.
+	if p, err := build(*profileDir, ""); err == nil {
+		log.Printf("piCVert preview on http://%s  —  template: %s", *addr, p.Template.Title)
+	} else {
+		log.Printf("piCVert preview on http://%s", *addr)
+	}
+	log.Printf("  /         the page          (rebuilt on every reload)")
 	log.Printf("  /cv.pdf   the PDF, from the same layout")
 	log.Printf("  /fit      does it hold on one page")
 	return http.ListenAndServe(*addr, mux)
