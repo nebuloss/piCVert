@@ -127,10 +127,68 @@ a style already bold stays put"), `AlignOf` ("a child's own choice wins"). Every
 caller that re-derived those would be a chance to derive them differently. A
 `GetWidth()` returning `Width` would not.
 
-### Observers, events
+### Observers, events — in the engine
 
-Nothing here is asynchronous, and nothing needs to know when something else
-changes. A layout is a pure function of a document and a theme.
+Nothing in the engine is asynchronous, and nothing needs to know when something
+else changes. A layout is a pure function of a document and a theme.
+
+**The browser is the opposite case**, and the interface does use them. See
+"The interface" below: the distinction is the point, not an inconsistency.
+
+## The interface
+
+`internal/server/web/` is a separate argument from the engine's, because it
+answers to a different set of facts: it is asynchronous, it is driven by a
+person, and several independent things must react to one change.
+
+There is **no framework**. A CV editor draws a form from a field tree and shows
+a preview in an iframe; the expensive part is the layout, which happens on the
+server. A diffing library would add a dependency and a build step to save work
+that is not being done.
+
+### Observer — the document is the subject
+
+`model/document.js`. Typing changes the document; the preview, the autosave and
+the fit report all react; they run at different rates and none is interested in
+the others. Wired directly, the control handling a keystroke would have to know
+about all three — and the fourth thing that needs to react becomes a change to
+the typing code, which is how the save logic ends up inside the text field.
+
+Two events, and the distinction is load-bearing: `"value"` (a field changed, the
+form must NOT redraw or the caret jumps on every letter) and `"shape"` (the
+structure changed, the form must). They were one event once, and the editor
+stole the cursor after every keystroke.
+
+### Registry and polymorphism — the controls
+
+`editor/controls.js`, a map from field kind to a `Control` subclass. The same
+argument as `layout.Layouter`, for the same reason: a switch on the kind has to
+be repeated — build the control, read it back, make a blank one for a new list
+entry — and a kind with no branch renders as nothing. The clinching case is the
+same too: `text` and `rich` are one control with one flag.
+
+### Composite — controls contain controls
+
+A group holds controls, a list holds groups. Not a design choice so much as the
+field tree's own shape, followed — which is what makes "no per-section code"
+true rather than aspirational.
+
+### Facade — `Api` and `HttpClient`
+
+`editor/api.js` over `lib/http.js`. The server reports failure as `{ok:false}`
+with a 200 on some paths and a 4xx on others; unpicked at each call site, that
+is a call site that forgets the case it does not hit. And no part of the
+interface spells a URL, so a route that moves breaks in one place.
+
+### Deliberately not, here
+
+- **A virtual DOM.** The form is rebuilt on structural change only, which is
+  rare and cheap. The preview is an iframe the server fills.
+- **A state container.** There is one document and it is the state. A second
+  store would be a second copy to fall out of step with the first.
+- **`innerHTML` anywhere.** `lib/dom.js` sets `textContent`. That is the entire
+  XSS story of this interface: a name containing `<script>` is a name containing
+  those nine characters.
 
 ## The invariant behind all of it
 

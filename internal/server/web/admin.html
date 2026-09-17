@@ -5,60 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>piCVert — administration</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<style>
-  :root { --ink:#1b1b1f; --dim:#5d5d66; --line:#e4e1da; --bg:#faf7f0; --card:#fff; --accent:#8a5a12; --warn:#a3401f; }
-  * { box-sizing: border-box; }
-  body {
-    margin:0; background:var(--bg); color:var(--ink);
-    font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  }
-  header {
-    display:flex; gap:12px; align-items:center; padding:12px 18px;
-    background:var(--card); border-bottom:1px solid var(--line);
-  }
-  header strong { font-size:16px; }
-  header .warn { color:var(--warn); font-size:12px; }
-  header .spacer { flex:1 1 auto; }
-  main { padding:18px; max-width:1100px; margin:0 auto; }
-  input[type=search], button, select {
-    font:inherit; border:1px solid var(--line); background:var(--card); color:var(--ink);
-    border-radius:8px; padding:6px 10px;
-  }
-  button { border-radius:999px; cursor:pointer; }
-  button:hover { border-color:var(--accent); color:var(--accent); }
-  button.danger:hover { border-color:var(--warn); color:var(--warn); }
-  table { width:100%; border-collapse:collapse; background:var(--card); border-radius:12px; overflow:hidden; }
-  th, td { text-align:left; padding:10px 12px; border-top:1px solid var(--line); vertical-align:top; }
-  th { background:#f3efe6; font-size:12px; color:var(--dim); border-top:0; }
-  td.links { font-size:12px; }
-  td.links code { display:block; word-break:break-all; color:var(--dim); }
-  .tag { font-size:11px; border:1px solid var(--line); border-radius:999px; padding:1px 7px; color:var(--dim); }
-  .tag.public { border-color:var(--accent); color:var(--accent); }
-  .bar { display:flex; gap:10px; align-items:center; margin-bottom:14px; }
-  h2 { font-size:15px; margin:28px 0 10px; }
-  .policy { color:var(--dim); font-size:12px; }
-  .empty { padding:18px; color:var(--dim); background:var(--card); border-radius:12px; }
-</style>
+<link rel="stylesheet" href="/assets/admin/admin.css">
 </head>
 <body data-public-url="{{.PublicURL}}">
+
 <header>
   <strong>piCVert</strong>
   <span class="warn">administration — no access control, never proxy this port</span>
   <span class="spacer"></span>
-  <span class="policy" id="policy"></span>
+  <span class="muted" id="policy"></span>
 </header>
+
 <main>
+  <section id="create" aria-label="Create a CV"></section>
+
   <div class="bar">
     <input type="search" id="q" placeholder="Search a CV" aria-label="Search">
-    <span class="spacer" style="flex:1"></span>
-    <span id="count" class="policy"></span>
-    <button id="prev">‹</button><button id="next">›</button>
+    <span class="spacer"></span>
+    <span class="muted" id="count"></span>
+    <button id="prev" title="Previous page">‹</button>
+    <button id="next" title="Next page">›</button>
   </div>
   <div id="list"></div>
 
   <h2>Set aside</h2>
+  <p class="muted">
+    Deleted CVs wait here before being erased for good, so a mistake can be undone.
+  </p>
   <div id="trash"></div>
 </main>
+
 <script type="module" src="/assets/admin/admin.js"></script>
 </body>
 </html>

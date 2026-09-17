@@ -5,103 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Name}} — CV</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<style>
-  :root {
-    --ink: #1b1b1f; --dim: #5d5d66; --line: #e2e2e8;
-    --bg: #f5f4f2; --card: #fff; --accent: #2f6b4f;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  header {
-    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
-    padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line);
-    position: sticky; top: 0; z-index: 2;
-  }
-  h1 { font-size: 16px; margin: 0; font-weight: 600; flex: 1 1 auto; }
-  a.button, button {
-    font: inherit; border: 1px solid var(--line); background: var(--card);
-    color: var(--ink); border-radius: 999px; padding: 6px 14px;
-    text-decoration: none; cursor: pointer;
-  }
-  a.button:hover, button:hover { border-color: var(--accent); color: var(--accent); }
-  a.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  a.primary:hover { color: #fff; opacity: .9; }
-  select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); }
-  /*
-   * The page is a fixed 794x1123 document. Rather than let a phone scroll it
-   * sideways, it is SCALED to the width available — the same way a PDF reader
-   * fits a page to the screen. Scaling happens on a wrapper whose height is
-   * corrected in script, because a transform does not change layout size and
-   * the page would otherwise leave a screenful of white underneath it.
-   */
-  #stage { padding: 20px; display: flex; justify-content: center; }
-  #fit { transform-origin: top center; }
-  iframe {
-    width: 794px; height: 1123px; border: 0; display: block;
-    background: #fff; box-shadow: 0 2px 16px rgba(0,0,0,.12); border-radius: 4px;
-  }
-  @media print {
-    header, #chrome { display: none; }
-    #stage { padding: 0; }
-    iframe { box-shadow: none; border-radius: 0; }
-  }
-</style>
+<link rel="stylesheet" href="/assets/viewer/viewer.css">
 </head>
-<body>
+<body data-base="{{.Base}}" data-lang="{{.Lang}}">
+
 <header id="chrome">
   <h1>{{.Name}}</h1>
   <select id="lang" hidden aria-label="Language"></select>
   <a class="button" id="pdf" href="{{.Base}}/cv.pdf">PDF</a>
   {{if .CanEdit}}<a class="button primary" href="{{.Base}}/edit/">Edit</a>{{end}}
 </header>
+
 <div id="stage"><div id="fit"><iframe id="cv" title="{{.Name}}"></iframe></div></div>
-<script>
-(function () {
-  var base = {{.Base}};
-  var languages = {{.Languages}};
-  var current = {{.Lang}};
 
-  var frame = document.getElementById('cv');
-  var pdf = document.getElementById('pdf');
-  var picker = document.getElementById('lang');
-
-  function query() { return current ? '?lang=' + encodeURIComponent(current) : ''; }
-  function show() {
-    frame.src = base + '/cv.html' + query();
-    pdf.href = base + '/cv.pdf' + query();
-  }
-
-  // Only offered when there is a choice to make. A picker with one entry is a
-  // control that teaches people it does nothing.
-  if (languages && languages.length > 1) {
-    languages.forEach(function (entry) {
-      var option = document.createElement('option');
-      option.value = entry.variant || '';
-      option.textContent = entry.lang.toUpperCase() + (entry.isDefault ? ' (default)' : '');
-      if (option.value === current) option.selected = true;
-      picker.appendChild(option);
-    });
-    picker.hidden = false;
-    picker.addEventListener('change', function () { current = picker.value; show(); });
-  }
-
-  // Scale to fit, and correct the height the transform did not change.
-  function scale() {
-    var stage = document.getElementById('stage');
-    var wrap = document.getElementById('fit');
-    var room = stage.clientWidth - 40;
-    var factor = Math.min(1, room / 794);
-    wrap.style.transform = 'scale(' + factor + ')';
-    wrap.style.height = (1123 * factor) + 'px';
-    wrap.style.width = '794px';
-  }
-  window.addEventListener('resize', scale);
-  scale();
-  show();
-})();
-</script>
+<!-- The languages travel as JSON in a script tag rather than as attributes:
+     one value, parsed once, and nothing to escape by hand. -->
+<script type="application/json" id="languages">{{.Languages}}</script>
+<script type="module" src="/assets/viewer/viewer.js"></script>
 </body>
 </html>

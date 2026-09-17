@@ -13,11 +13,11 @@
   <strong>piCVert</strong>
   <span id="state" class="state">loading…</span>
   <span class="spacer"></span>
-  <select id="lang" aria-label="Language"></select>
+  <select id="lang" aria-label="Language" hidden></select>
   <button id="add-lang" title="Add a language">+ lang</button>
   <button id="history-open">History</button>
-  <a class="button" href="{{.Base}}/cv.pdf" target="_blank" rel="noopener">PDF</a>
-  <a class="button" href="{{.Base}}/" target="_blank" rel="noopener">View</a>
+  <a class="button" data-kind="pdf" href="{{.Base}}/cv.pdf" target="_blank" rel="noopener">PDF</a>
+  <a class="button" data-kind="page" href="{{.Base}}/" target="_blank" rel="noopener">View</a>
 </header>
 
 <main>

@@ -1,54 +1,59 @@
-// api.js — every request the editor makes, in one place.
+// api.js — the routes, named once.
 //
-// The token travels in a HEADER rather than in the query string: query strings
-// are logged by proxies and kept in browser history, and the token is the only
-// secret this service has. The address bar already carries it — that cannot be
-// helped, it IS the link — but nothing else has to.
+// A facade over the transport, and its job is that no part of the interface
+// spells a URL. A panel building `/api/p/${slug}/sections/${id}/order` itself
+// is a panel that keeps working when the route moves and starts 404ing at the
+// one moment nobody tests.
 
-const body = document.body;
+import { HttpClient } from '../lib/http.js';
 
-export const base = body.dataset.base;
-export const slug = body.dataset.slug;
-const token = body.dataset.token;
-
-async function call(method, path, payload, type) {
-  const options = {
-    method,
-    headers: { 'X-CV-Token': token },
-  };
-  if (payload !== undefined) {
-    options.headers['Content-Type'] = type || 'application/json';
-    options.body = type ? payload : JSON.stringify(payload);
+export class Api {
+  constructor({ slug, token, base }) {
+    this.slug = slug;
+    this.base = base;
+    this.http = new HttpClient({ token });
   }
-  const response = await fetch(path, options);
-  const text = await response.text();
-  let parsed = null;
-  try { parsed = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-  if (!response.ok || (parsed && parsed.ok === false)) {
-    // The engine's own message, not a generic one. Whoever is holding this link
-    // is the person who can fix the CV that broke, and "something went wrong"
-    // tells them nothing they can act on.
-    throw new Error((parsed && parsed.error) || text || response.statusText);
+
+  /** The language is a query parameter on nearly everything, so it is built once. */
+  #q(lang) {
+    return lang ? `?lang=${encodeURIComponent(lang)}` : '';
   }
-  return parsed;
+
+  #p(suffix = '', lang = '') {
+    return `/api/p/${this.slug}${suffix}${this.#q(lang)}`;
+  }
+
+  load(lang) { return this.http.get(this.#p('', lang)); }
+  save(doc, lang) { return this.http.put(this.#p('', lang), doc); }
+  preview(doc, lang) { return this.http.post(this.#p('/preview', lang), doc); }
+  fit(lang) { return this.http.get(this.#p('/fit', lang)); }
+  history(lang) { return this.http.get(this.#p('/history', lang)); }
+  links() { return this.http.get(this.#p('/links')); }
+  remove() { return this.http.delete(this.#p()); }
+
+  setTemplate(uuid, lang) {
+    return this.http.put(this.#p('/template', lang), { template: uuid });
+  }
+
+  reorderSections(order, lang) {
+    return this.http.put(this.#p('/sections/order', lang), { order });
+  }
+
+  templates() { return this.http.get('/api/templates'); }
+
+  languages() { return this.http.get(this.#p('/languages')); }
+  addLanguage(lang, from) {
+    return this.http.post(this.#p('/languages'), { lang, from: from || '' });
+  }
+  removeLanguage(lang) {
+    return this.http.delete(`/api/p/${this.slug}/languages/${encodeURIComponent(lang)}`);
+  }
+
+  photo(file, lang) {
+    return this.http.post(this.#p('/photo', lang), file, file.type);
+  }
+
+  /** The links out of the editor, carrying whichever language is being edited. */
+  pageUrl(lang) { return `${this.base}/${this.#q(lang)}`; }
+  pdfUrl(lang) { return `${this.base}/cv.pdf${this.#q(lang)}`; }
 }
-
-const query = (lang) => (lang ? '?lang=' + encodeURIComponent(lang) : '');
-
-export const api = {
-  load: (lang) => call('GET', `/api/p/${slug}${query(lang)}`),
-  save: (doc, lang) => call('PUT', `/api/p/${slug}${query(lang)}`, doc),
-  setTemplate: (uuid, lang) =>
-    call('PUT', `/api/p/${slug}/template${query(lang)}`, { template: uuid }),
-  reorderSections: (order, lang) =>
-    call('PUT', `/api/p/${slug}/sections/order${query(lang)}`, { order }),
-  preview: (doc, lang) => call('POST', `/api/p/${slug}/preview${query(lang)}`, doc),
-  history: (lang) => call('GET', `/api/p/${slug}/history${query(lang)}`),
-  templates: () => call('GET', '/api/templates'),
-  languages: () => call('GET', `/api/p/${slug}/languages`),
-  addLanguage: (lang, from) =>
-    call('POST', `/api/p/${slug}/languages`, { lang, from: from || '' }),
-  removeLanguage: (lang) => call('DELETE', `/api/p/${slug}/languages/${lang}`),
-  photo: (blob, lang) =>
-    call('POST', `/api/p/${slug}/photo${query(lang)}`, blob, blob.type),
-};

@@ -241,9 +241,17 @@ func (g *Guard) Policy(kind Kind) string {
 		return "default-src 'none'; img-src data:; style-src 'unsafe-inline'; " +
 			"font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors " + frame
 	case Viewer:
-		return "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; " +
-			"script-src 'unsafe-inline'; connect-src 'self'; frame-src 'self'; " +
-			"font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors " + frame
+		// The chrome around a CV: our own script and stylesheet, the page
+		// itself in a same-origin frame, and nothing from anywhere else.
+		//
+		// NO `'unsafe-inline'` FOR SCRIPT. It was there while the viewer
+		// carried its behaviour in a <script> block, and it is exactly the
+		// directive that makes a content policy decorative: an injected script
+		// in a CV field would have run. The behaviour is a module now, so the
+		// policy can say what it means.
+		return "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+			"script-src 'self'; connect-src 'self'; frame-src 'self'; " +
+			"font-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors " + frame
 	case Admin:
 		// The editor: assets served by us, never a third-party origin. Its
 		// preview pane draws the page in an iframe that inherits THIS policy,
