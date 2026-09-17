@@ -2,8 +2,10 @@ package server
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -120,17 +122,32 @@ func TestConcurrentWritesDoNotCorrupt(t *testing.T) {
 	}
 }
 
-// TestRenderingIsNotSerialised measures whether a second request waits for the
-// first.
+// TestRenderingReportsItsParallelism prints how the whole stack scales, and
+// asserts nothing about it.
 //
-// The layout engine caches glyph advances behind ONE mutex, held for the whole
-// of a measurement. If that mutex is the bottleneck, twelve concurrent layouts
-// take twelve times one — and the editor's preview, which is the hot path, gets
-// slower for everybody as soon as two people are typing.
+// # WHY IT USED TO ASSERT, AND WHY IT MUST NOT
 //
-// Reported rather than asserted: a build host under load makes any threshold a
-// flaky test. The number is the point.
-func TestRenderingIsNotSerialised(t *testing.T) {
+// It compared twelve concurrent previews against one and failed if the ratio
+// approached twelve. The threshold was chosen on a twelve-core machine, where
+// the answer is about 2.8; on two cores it is 7.5, and on a shared CI runner it
+// came out at 11.9 and failed the build.
+//
+// Nothing was wrong. Twelve processor-bound requests on two processors CANNOT
+// take less than six times one, so the measurement was reporting the runner's
+// core count and the noise around it. The comment above this test already said
+// "reported rather than asserted: a build host under load makes any threshold a
+// flaky test" — and then the code asserted anyway. The comment was right.
+//
+// # WHERE THE REAL CHECK LIVES NOW
+//
+// internal/layout.TestMeasuringTextRunsInParallel, which measures the one thing
+// worth protecting — the glyph cache lock — with no HTTP, no page allocation
+// and no disk in the way. Verified to fail when the global lock is put back:
+// 0.89× against 1.6× with it fixed, on both two and twelve processors.
+//
+// This is kept because the number is genuinely interesting when something is
+// slow, and because an end-to-end figure is the one a person asks for first.
+func TestRenderingReportsItsParallelism(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
@@ -157,15 +174,15 @@ func TestRenderingIsNotSerialised(t *testing.T) {
 	wg.Wait()
 	together := time.Since(start)
 
-	// Perfectly serial is n×single; perfectly parallel is 1×single.
-	ratio := float64(together) / float64(single)
-	t.Logf("one layout %v; %d at once %v (%.1f× one, %d× would be fully serial)",
-		single.Round(time.Millisecond), n,
-		together.Round(time.Millisecond), ratio, n)
-	if ratio > float64(n)*0.9 {
-		t.Errorf("concurrent layouts are effectively serialised (%.1f× of one, "+
-			"against %d requests) — the font cache lock is the bottleneck", ratio, n)
-	}
+	cores := runtime.GOMAXPROCS(0)
+	// What perfect scaling would be on THIS machine, so the figure can be read
+	// without knowing what it was run on.
+	best := math.Max(1, float64(n)/float64(cores))
+	t.Logf("on %d processors: one layout %v; %d at once %v (%.1f× one, "+
+		"%.1f× would be perfect here, %d× fully serial)",
+		cores, single.Round(time.Millisecond), n,
+		together.Round(time.Millisecond),
+		float64(together)/float64(single), best, n)
 }
 
 var _ = httptest.NewRequest
