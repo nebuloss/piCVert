@@ -160,6 +160,48 @@ mv -f "$PREFIX/picvert.new" "$PREFIX/picvert"
 
 # --- configuration -----------------------------------------------------------
 
+CONFIG=${PICVERT_CONFIG_FILE:-/etc/picvert.yaml}
+
+if [ -f "$CONFIG" ]; then
+  say "$CONFIG exists — left alone"
+else
+  say "writing $CONFIG"
+  fetch "https://raw.githubusercontent.com/$REPO/$VERSION/deploy/picvert.yaml.example" "$CONFIG" ||
+    fetch "https://raw.githubusercontent.com/$REPO/main/deploy/picvert.yaml.example" "$CONFIG" ||
+    die "cannot fetch the example configuration"
+
+  # The administration port listens on every interface, so it needs a password
+  # before anything will start. Generated here rather than demanded, so that
+  # installing stays one command and the safe path is the automatic one.
+  #
+  # Printed ONCE. Nothing stores it in a form anybody can read back — what goes
+  # in the file is a hash — so this line is the only time it exists.
+  ADMIN_PASSWORD=$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | cut -c1-24)
+  ADMIN_HASH=$(printf '%s\n' "$ADMIN_PASSWORD" | "$PREFIX/picvert" passwd --stdin 2>/dev/null)
+  if [ -n "$ADMIN_HASH" ]; then
+    # Into the `password: ""` line the example already carries, NOT appended.
+    # Appending produced a second `admin:` key and a file YAML refuses to
+    # parse — found by rehearsing the install rather than by reading it.
+    #
+    # The hash contains `$` and `/`, so `|` is the delimiter and the
+    # replacement goes through a shell variable rather than being interpolated
+    # into the pattern.
+    awk -v hash="$ADMIN_HASH" '
+      !done && /^  password: ""$/ { print "  password: \"" hash "\""; done = 1; next }
+      { print }
+    ' "$CONFIG" > "$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
+    if grep -q "$ADMIN_HASH" "$CONFIG"; then
+      GENERATED_PASSWORD=$ADMIN_PASSWORD
+    else
+      warn "could not write the administration password into $CONFIG"
+    fi
+  fi
+
+  chown "root:$SERVICE_USER" "$CONFIG" 2>/dev/null || true
+  chmod 0640 "$CONFIG"
+  NEW_CONFIG=yes
+fi
+
 if [ -f "$ENVFILE" ]; then
   say "$ENVFILE exists — left alone"
 else
@@ -247,31 +289,48 @@ printf '\n'
 "$PREFIX/picvert" version
 printf '\n'
 
+if [ -n "${GENERATED_PASSWORD:-}" ]; then
+  cat <<EOF
+
+┌─ THE ADMINISTRATION PASSWORD ─────────────────────────────────────────
+│
+│   $GENERATED_PASSWORD
+│
+│  Written down nowhere else: $CONFIG holds only a hash of it.
+│  Change it with: picvert passwd — then edit that file.
+└───────────────────────────────────────────────────────────────────────
+EOF
+fi
+
 if [ "${NEW_CONFIG:-no}" = yes ]; then
   cat <<EOF
 Next, in this order:
 
-  1. Edit $ENVFILE.
-     At the very least PICVERT_PUBLIC_URL, which is how the links it hands out
-     are written. Everything else has a working default.
+  1. Edit $CONFIG.
+     At the very least \`domain\`, which is how the links it hands out are
+     written. Everything else has a working default.
 
   2. Put a reverse proxy in front of the PUBLIC port only (3000).
      An example nginx site is in the deploy/ directory of the repository.
 
-  3. Make the first CV. There are two ways, and both are deliberate:
+  3. Make the first CV, from the administration page on port 3001 with the
+     password above, or from here:
 
        $PREFIX/picvert new --slug jean --name "Jean Dupont"
 
-     or reach the administration port over SSH — never through the proxy:
+THE ADMINISTRATION PORT IS REACHABLE FROM YOUR NETWORK, and the password above
+is what stands in front of it. It manages every CV and displays every private
+link on the service.
 
-       ssh -L 3001:127.0.0.1:3001 root@$(hostname 2>/dev/null || echo this-host)
+Never proxy it to the internet. The PUBLIC side deliberately has no
+authenticated surface at all — with nothing to guess there, there is nothing to
+attack continuously — and putting this one behind a public hostname would undo
+exactly that.
 
-     then open http://127.0.0.1:3001 on your own machine.
+To keep it off the network entirely, set admin.listen to "127.0.0.1:3001" in
+$CONFIG and reach it over SSH:
 
-THE ADMINISTRATION PORT HAS NO ACCESS CONTROL. That is by design: what protects
-it is being unreachable from outside. Do not proxy it, and do not put a password
-on it either — a password-protected surface would become the only thing here
-worth attacking.
+  ssh -L 3001:127.0.0.1:3001 $(hostname 2>/dev/null || echo this-host)
 
 Backups run nightly into $DATA/backups, keeping a fortnight. Take one now with:
 

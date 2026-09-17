@@ -45,6 +45,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -68,7 +69,16 @@ type Config struct {
 	// whatever the world outside sees.
 	Domain string `yaml:"domain"`
 
-	// Listen is the public address. Behind a proxy this stays on localhost.
+	// Listen is the public address.
+	//
+	// ALL INTERFACES by default, because the common deployment is a container
+	// and inside one "localhost" means inside the container: the port forward
+	// reaches nothing, and the failure looks like a broken service rather than
+	// a binding. Narrow it to 127.0.0.1 when a reverse proxy is on the same
+	// machine and nothing else should reach it directly.
+	//
+	// This is the port whose job is to be reachable. The administration one is
+	// not, and defaults the other way.
 	Listen string `yaml:"listen"`
 
 	Admin     Admin     `yaml:"admin"`
@@ -117,6 +127,18 @@ type Admin struct {
 
 	// Session is how long a login lasts.
 	Session time.Duration `yaml:"session"`
+
+	// Open says the port may be reachable with no password.
+	//
+	// An escape hatch, spelt out rather than a flag, because there ARE
+	// deployments where it is right: a container network nothing else is on, a
+	// machine behind a firewall that authenticates for it, a test. What it must
+	// not be is the thing somebody sets because the service would not start.
+	//
+	// "an internal network" is not on its own a reason. A LAN has other
+	// machines on it, and this interface hands out every private link on the
+	// service — the only credential it has — to anything that can reach it.
+	Open bool `yaml:"i-know-this-port-is-reachable"`
 }
 
 // Turnstile is Cloudflare's challenge, for surfaces open to strangers.
@@ -190,9 +212,17 @@ type Security struct {
 // choices somebody has to make before starting.
 func Defaults() Config {
 	return Config{
-		Listen: "127.0.0.1:3000",
+		Listen: "0.0.0.0:3000",
 		Admin: Admin{
-			Listen:  "127.0.0.1:3001",
+			// Every interface, like the public port: an administration page
+			// that can only be reached from the machine it runs on is one
+			// nobody reaches, because the machine it runs on is a container.
+			//
+			// Reachable means it needs a password, and the check below refuses
+			// to start without one. That is the trade, stated plainly: this is
+			// the one setting a person MUST make, and `picvert passwd` makes
+			// it in one command — deploy/install.sh does it for them.
+			Listen:  "0.0.0.0:3001",
 			Session: 12 * time.Hour,
 		},
 		Template: "material-you",
@@ -321,11 +351,57 @@ func (c *Config) check() error {
 			"admin.password is not a hash — it looks like a plaintext password.\n" +
 				"Run `picvert passwd` and paste what it prints")
 	}
+	// The administration port manages every CV and hands out every private link
+	// on the service. What used to protect it was that it listened on localhost
+	// and could only be reached by somebody already on the machine.
+	//
+	// Reachable from the network, that protection is simply gone — so the
+	// password stops being optional. REFUSED at startup rather than warned
+	// about: a warning in a log is a warning nobody reads, and the thing it
+	// would be warning about is an unauthenticated interface that deletes CVs.
+	if c.Admin.Listen != "" && !isLoopback(c.Admin.Listen) &&
+		c.Admin.Password == "" && !c.Admin.Open {
+		return fmt.Errorf(
+			"admin.listen is %q, which is reachable from the network, and no "+
+				"admin.password is set.\n\n"+
+				"That interface manages every CV on this service and hands out "+
+				"every private link — which are the only credentials this "+
+				"service has.\n\n"+
+				"  set a password      picvert passwd\n"+
+				"  keep it local       admin.listen: \"127.0.0.1:3001\"\n"+
+				"  turn it off         admin.listen: \"\"\n"+
+				"  or, knowingly       admin:\n"+
+				"                        i-know-this-port-is-reachable: true",
+			c.Admin.Listen)
+	}
 	if c.Turnstile.SiteKey != "" && c.Turnstile.Secret == "" {
 		return fmt.Errorf("turnstile.site-key is set without turnstile.secret — " +
 			"a challenge checked only in the browser is not checked")
 	}
 	return nil
+}
+
+// isLoopback reports whether an address can only be reached from this machine.
+//
+// The host part alone, because the port says nothing about reachability. An
+// empty host — ":3001" — is every interface, which is the shape that looks
+// harmless and is not.
+func isLoopback(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		// Unparseable: treated as reachable, because guessing "probably local"
+		// about an address nobody can read is guessing in the dangerous
+		// direction.
+		return false
+	}
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // LinkTo builds an address somebody can paste into a message.

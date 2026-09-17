@@ -94,14 +94,54 @@ restarts, and leaves `/etc/picvert.env` and the data alone.
                                :3001   administration — NOT PROXIED
 ```
 
-**The admin port has no access control at all.** That is deliberate and it is
-not an oversight to be corrected: the thing protecting it is that nothing
-outside can reach it. Reach it over an SSH tunnel.
+**Both listen on every interface**, because the deployment this is built for is
+a container — and inside one, `127.0.0.1` means inside the container, so a port
+forward reaches nothing and the failure looks like a broken service rather than
+a binding.
 
-Do not put a password on it either. A password-protected surface on the public
-side would become the only thing here actually worth attacking, and it would be
-attacked continuously by people who have never heard of this service. With no
-such surface there is nothing to guess.
+That makes the admin password **mandatory**: piCVert refuses to start on a
+reachable admin address without one. What used to protect that port was that
+nobody could reach it, and binding it wider removes exactly that.
+
+`deploy/install.sh` generates one and prints it once:
+
+```
+┌─ THE ADMINISTRATION PASSWORD ─────────────────────────────
+│   qTf4Kx2mNpR7vWs9Lb3Y
+│  Written down nowhere else: the config holds only a hash.
+└───────────────────────────────────────────────────────────
+```
+
+Change it with `picvert passwd` and edit `admin.password`.
+
+**Never proxy the admin port to the internet.** The public side deliberately has
+no authenticated surface at all — with nothing to guess there, nothing is
+attacked continuously — and putting this one behind a public hostname undoes
+that.
+
+### To keep it off the network entirely
+
+```yaml
+admin:
+  listen: "127.0.0.1:3001"    # and reach it over a tunnel
+```
+```sh
+ssh -L 3001:127.0.0.1:3001 your-host     # then http://127.0.0.1:3001
+```
+
+Or `listen: ""` to run with no admin port at all, using `picvert new` from a
+shell.
+
+### "It is only on our internal network"
+
+Not on its own a reason to skip the password. A LAN has other machines on it — a
+laptop, a phone, a printer, another container — and the private links that page
+displays are the only credentials this service has. If you genuinely mean it:
+
+```yaml
+admin:
+  i-know-this-port-is-reachable: true
+```
 
 ## What is secret, and what is not
 
