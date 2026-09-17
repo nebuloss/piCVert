@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go.sum
+
+      # gofmt is not advisory: unformatted Go is a review distraction, and the
+      # tool settles it rather than the reviewer.
+      - name: Check the engine
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; echo 'run gofmt -w .'; exit 1; }
+          go vet ./...
+          go test ./...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # esbuild STRIPS types without checking them, so every strict setting in
+      # tsconfig.json is unenforced unless tsc is run in its own right. This is
+      # the only step that needs Node, and nothing that builds or runs the
+      # service does.
+      - name: Typecheck the interface
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+
+      # The bundle is committed, for the same reason the font subsets are: a
+      # checkout must build with the Go toolchain alone. What makes a committed
+      # artefact safe is this step — rebuild it, and fail if the result differs
+      # from what was pushed, so it cannot drift from the source it came from.
+      - name: The committed bundle matches its source
+        run: |
+          go generate ./...
+          if ! git diff --quiet -- internal/server/web/assets; then
+            echo 'The interface was changed without rebuilding it.'
+            echo 'Run: go generate ./...'
+            git diff --stat -- internal/server/web/assets
+            exit 1
+          fi
+
+      # Cross-compiling is free with CGO off, so every target we publish is
+      # checked on every push rather than discovered to be broken at a tag.
+      - name: It builds for every target we publish
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          while read -r os arch; do
+            GOOS=$os GOARCH=$arch go build -o /dev/null ./cmd/picvert
+            echo "  ok  $os/$arch"
+          done <<'TARGETS'
+          linux amd64
+          linux arm64
+          linux arm
+          darwin amd64
+          darwin arm64
+          windows amd64
+          TARGETS
+
+      # Advisory: a style nit in the installer should surface, not block a
+      # merge. Its correctness is covered by `bash -n` below.
+      - name: Shellcheck the installer
+        continue-on-error: true
+        run: |
+          bash -n deploy/install.sh
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck deploy/install.sh

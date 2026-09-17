@@ -16,6 +16,13 @@ import (
 	"picvert/internal/profiles"
 )
 
+// version is stamped at build time with the tag being released.
+//
+// "dev" everywhere else, which is the honest answer for a binary built from a
+// working tree: a version number on something that was never tagged is a
+// version number somebody will quote in a bug report.
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -35,6 +42,9 @@ func main() {
 		err = serveCmd(os.Args[2:])
 	case "new":
 		err = newCmd(os.Args[2:])
+	case "version", "--version", "-v":
+		fmt.Println("picvert", version)
+		return
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -72,6 +82,8 @@ func usage() {
   picvert new --slug <name> [--name "Full Name"] [--lang xx] [--template t]
         Creates a CV and prints its two private links. Those links are the
         only way into it.
+
+  picvert version
 
 Environment:
   PICVERT_HOME     where templates/ and fonts/ live (default: alongside the binary)

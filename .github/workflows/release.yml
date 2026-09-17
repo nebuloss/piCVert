@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Everything CI does, again, because a tag is the one build nobody gets
+      # to re-run after the fact.
+      - name: Check
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test ./...
+
+      - name: The published binary carries the committed interface
+        run: |
+          go generate ./...
+          git diff --exit-code -- internal/server/web/assets
+
+      # Static, so a target needs no Go toolchain and no shared libraries — and
+      # CGO off is what makes it static, and what makes cross-compiling free: no
+      # toolchain per architecture, no emulation, seconds per target.
+      #
+      # linux/amd64 and linux/arm64 are the hosts this is deployed on, armv7 the
+      # older 32-bit Pis. macOS and Windows are here because `picvert render`,
+      # `pdf` and `fit` are a useful local command — the PDF is written directly,
+      # with no browser and nothing platform-specific, so those builds are real
+      # rather than nominal.
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          build() {  # <goos> <goarch> <suffix> [goarm]
+            GOOS="$1" GOARCH="$2" GOARM="${4:-}" go build \
+              -trimpath -ldflags="-s -w -X main.version=$version" \
+              -o "dist/picvert-$3${5:-}" ./cmd/picvert
+            echo "  $3: $(stat -c%s "dist/picvert-$3${5:-}") bytes"
+          }
+          build linux   amd64 linux-amd64
+          build linux   arm64 linux-arm64
+          build linux   arm   linux-armv7 7
+          build darwin  amd64 darwin-amd64
+          build darwin  arm64 darwin-arm64
+          build windows amd64 windows-amd64 '' .exe
+
+      # What a host needs beside the binary: the unit, the environment example,
+      # the proxy site and the installer. Not the templates or the fonts —
+      # those are inside the binary, which is the whole point.
+      - name: Package the deployment files
+        run: tar -czf dist/picvert-deploy.tar.gz deploy/ docs/HOSTING.md
+
+      # The installer fetches an executable over the network and runs it as
+      # root. Publishing the digests lets somebody check that what arrived is
+      # what was built here, which costs one file.
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum picvert-* > SHA256SUMS
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
