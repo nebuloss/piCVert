@@ -40,8 +40,7 @@ package theme
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"strconv"
 	"strings"
 
@@ -66,8 +65,6 @@ type Theme struct {
 	// template that declares a slot in template.json but composes nothing for
 	// it would render a blank card; the conformance kit refuses that.
 	Sections map[string]*Element `json:"sections"`
-
-	dir string
 }
 
 // RawStyle is a style as written in theme.json.
@@ -188,24 +185,28 @@ type StyleBy struct {
 }
 
 // Load reads a theme from a template directory.
-func Load(dir string) (*Theme, error) {
-	raw, err := os.ReadFile(filepath.Join(dir, "theme.json"))
+// Load reads a theme from a template's own files.
+//
+// An fs.FS rather than a path, so that a template compiled into the binary and
+// one in a directory are read by the same code — see internal/assets for why
+// that matters.
+func Load(dir fs.FS) (*Theme, error) {
+	raw, err := fs.ReadFile(dir, "theme.json")
 	if err != nil {
-		return nil, fmt.Errorf("no theme.json in %s", filepath.Base(dir))
+		return nil, fmt.Errorf("no theme.json")
 	}
 	var t Theme
 	if err := json.Unmarshal(raw, &t); err != nil {
-		return nil, fmt.Errorf("theme.json in %s is not readable: %w", filepath.Base(dir), err)
+		return nil, fmt.Errorf("theme.json is not readable: %w", err)
 	}
-	t.dir = dir
 	if t.Page == nil {
-		return nil, fmt.Errorf("theme.json in %s declares no page", filepath.Base(dir))
+		return nil, fmt.Errorf("theme.json declares no page")
 	}
 	// Resolved once, at load, so a typo in a colour name is a startup failure
 	// rather than a field that renders in the wrong colour months later.
 	for name, s := range t.Styles {
 		if _, err := t.Resolve(s); err != nil {
-			return nil, fmt.Errorf("style %q in %s: %w", name, filepath.Base(dir), err)
+			return nil, fmt.Errorf("style %q: %w", name, err)
 		}
 	}
 	return &t, nil

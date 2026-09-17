@@ -114,9 +114,18 @@ func (f *Fonts) Load(family string, weight Weight, italic bool, file string) err
 	if err != nil {
 		return fmt.Errorf("font %s: %w", file, err)
 	}
+	return f.Parse(family, weight, italic, file, raw)
+}
+
+// Parse registers a font from bytes somebody else read.
+//
+// The form the engine actually uses, because a template's fonts may live in a
+// directory or inside the binary and only the registry knows which. Load is
+// kept for tests and for anything holding a path.
+func (f *Fonts) Parse(family string, weight Weight, italic bool, name string, raw []byte) error {
 	font, err := sfnt.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("font %s is not readable: %w", file, err)
+		return fmt.Errorf("font %s is not readable: %w", name, err)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -123,6 +123,16 @@ Recorded because each cost real time and none is obvious from the code.
 - **A subsetter renumbers glyphs.** Encoding text against one font file and
   embedding another produces a page of plausible gibberish, with the metrics
   still correct because the widths came from the same wrong indices.
+  **Paid for twice**: the second time because a face held a PATH and re-read it
+  when writing, so the bytes it parsed and the bytes it embedded could differ.
+  It now holds the bytes, and a test embeds one file while naming another to
+  prove the face ignores the name.
+- **"It is one self-contained binary" was not true, and nothing noticed.** Only
+  the browser interface was embedded; the templates and fonts were read from a
+  directory beside the binary. Every test set `PICVERT_HOME` to the checkout,
+  where that directory happens to exist — so the claim was made in the README,
+  the installer and a dozen comments, and was first contradicted by installing
+  a release. A test now runs the engine against an empty directory.
 - **PDF text state outlives the text object that set it.** `BT`/`ET` resets the
   text matrix and nothing else, so `Tc` — character spacing — written only when
   non-zero leaked out of every section title into the paragraphs after it. At

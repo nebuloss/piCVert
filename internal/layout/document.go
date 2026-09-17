@@ -4,8 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -20,8 +18,22 @@ import (
 // these exact files; drawing it in whatever the reader happens to have
 // installed would move every line break away from where it was measured, and a
 // page that fits by less than one line would silently lose its last section.
-func Document(r *Render, fonts []FontDecl, templateDir, sharedDir, title string) (string, error) {
-	faces, err := embedFonts(fonts, templateDir, sharedDir)
+// WebFont is one face, already read, ready to be inlined.
+//
+// The bytes rather than a path, because only the template registry knows
+// whether a template's fonts are in a directory or inside the binary — and a
+// page that silently shipped without its fonts was the failure this shape
+// removes.
+type WebFont struct {
+	Family string
+	Weight int
+	Italic bool
+	// WOFF2 is the compressed face. Empty is refused rather than skipped.
+	WOFF2 []byte
+}
+
+func Document(r *Render, faces []WebFont, title string) (string, error) {
+	css, err := embedFonts(faces)
 	if err != nil {
 		return "", err
 	}
@@ -42,7 +54,7 @@ func Document(r *Render, fonts []FontDecl, templateDir, sharedDir, title string)
 	b.WriteString("<meta name=\"color-scheme\" content=\"light\">\n")
 	fmt.Fprintf(&b, "<title>%s</title>\n", escapeTitle(title))
 	b.WriteString("<style>\n")
-	b.WriteString(faces)
+	b.WriteString(css)
 	// Nothing inherited from a browser default: every position, size and colour
 	// on the page was computed, and a user-agent margin would move all of them.
 	b.WriteString("*{margin:0;padding:0;box-sizing:content-box}\n")
@@ -74,34 +86,38 @@ func Document(r *Render, fonts []FontDecl, templateDir, sharedDir, title string)
 // compressed for the web. A template shipping no woff2 simply gets no
 // @font-face, and falls back to whatever the reader has — which is the
 // behaviour this exists to avoid, so the conformance kit refuses it.
-func embedFonts(fonts []FontDecl, templateDir, sharedDir string) (string, error) {
+// embedFonts writes the faces into the page as data URIs.
+//
+// A page carries its own typefaces so that it renders identically wherever it
+// is opened — the layout was computed from those exact files, and drawing it in
+// whatever the reader happens to have installed moves every line break away
+// from where it was measured.
+//
+// A MISSING FACE IS AN ERROR, not something to skip. It used to `continue`, so
+// a page whose fonts could not be read was served looking complete and laid out
+// in a fallback: a CV that fits by less than a line, quietly cut off, on
+// somebody else's machine.
+func embedFonts(faces []WebFont) (string, error) {
 	var b strings.Builder
-	for _, decl := range fonts {
-		for _, src := range decl.Sources {
-			path := src.File
-			if rel, ok := trimShared(path); ok {
-				path = filepath.Join(sharedDir, rel)
-			} else {
-				path = filepath.Join(templateDir, path)
-			}
-			web := strings.TrimSuffix(path, filepath.Ext(path)) + ".woff2"
-			raw, err := os.ReadFile(web)
-			if err != nil {
-				continue
-			}
-			weight := 400
-			if src.Weight != 0 {
-				weight = src.Weight
-			}
-			style := "normal"
-			if src.Style == "italic" {
-				style = "italic"
-			}
-			fmt.Fprintf(&b,
-				"@font-face{font-family:'%s';font-style:%s;font-weight:%d;font-display:block;"+
-					"src:url(data:font/woff2;base64,%s) format('woff2')}\n",
-				decl.Family, style, weight, base64.StdEncoding.EncodeToString(raw))
+	for _, face := range faces {
+		if len(face.WOFF2) == 0 {
+			return "", fmt.Errorf(
+				"no web font for %s %d: the page would be drawn in whatever the "+
+					"reader has installed, which is not what it was measured in",
+				face.Family, face.Weight)
 		}
+		style := "normal"
+		if face.Italic {
+			style = "italic"
+		}
+		weight := face.Weight
+		if weight == 0 {
+			weight = 400
+		}
+		fmt.Fprintf(&b,
+			"@font-face{font-family:'%s';font-style:%s;font-weight:%d;font-display:block;"+
+				"src:url(data:font/woff2;base64,%s) format('woff2')}\n",
+			face.Family, style, weight, base64.StdEncoding.EncodeToString(face.WOFF2))
 	}
 	return b.String(), nil
 }

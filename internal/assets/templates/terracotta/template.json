@@ -1,0 +1,64 @@
+{
+  "uuid": "7c3f1e84-2b6d-4a19-9f05-c81de4b2a730",
+  "name": "terracotta",
+  "title": "Material You (blue header)",
+  "version": 1,
+  "description": "The same layout with the original blue header band.",
+  "cover": "cover.svg",
+  "columns": [
+    "left",
+    "right"
+  ],
+  "sections": [
+    {
+      "type": "contact",
+      "column": "left",
+      "max": 1
+    },
+    {
+      "type": "chips",
+      "column": "left"
+    },
+    {
+      "type": "languages",
+      "column": "left",
+      "max": 1
+    },
+    {
+      "type": "text",
+      "column": "right"
+    },
+    {
+      "type": "items",
+      "column": "right"
+    },
+    {
+      "type": "list",
+      "column": "right"
+    }
+  ],
+  "fonts": [
+    {
+      "family": "Roboto",
+      "sources": [
+        {
+          "file": "@engine/Roboto-Regular.ttf",
+          "weight": 400
+        },
+        {
+          "file": "@engine/Roboto-Medium.ttf",
+          "weight": 500
+        },
+        {
+          "file": "@engine/Roboto-Bold.ttf",
+          "weight": 700
+        },
+        {
+          "file": "@engine/Roboto-Italic.ttf",
+          "weight": 400,
+          "style": "italic"
+        }
+      ]
+    }
+  ]
+}

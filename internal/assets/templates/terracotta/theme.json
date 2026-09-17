@@ -1,0 +1,780 @@
+{
+  "tokens": {
+    "primary": "#0B57D0",
+    "onPrimary": "#FFFFFF",
+    "primaryContainer": "#D3E3FD",
+    "onPrimaryContainer": "#04264E",
+    "secondaryContainer": "#DBE2F0",
+    "onSecondary": "#2A3B52",
+    "tertiaryContainer": "#C7ECD8",
+    "onTertiary": "#0B4228",
+    "surface": "#F5F8FE",
+    "card": "#FFFFFF",
+    "cardAlt": "#EEF2FA",
+    "onSurface": "#1A1C1F",
+    "onSurfaceVar": "#474B52",
+    "outline": "#D5DBE6",
+    "headerFrom": "#D3E3FD",
+    "headerMid": "#E7EFFC",
+    "headerTo": "#CFE7DC",
+    "headerInk": "#0A1B33",
+    "headerChip": "#0B57D0",
+    "headerOnChip": "#FFFFFF",
+    "headerSubtle": "#04264E"
+  },
+  "styles": {
+    "page": {
+      "background": "$surface",
+      "padding": "30",
+      "gap": 16,
+      "clip": true,
+      "family": "Roboto",
+      "size": 10,
+      "colour": "$onSurface"
+    },
+    "header": {
+      "display": "row",
+      "align": "center",
+      "gap": 24,
+      "padding": "13 24",
+      "radius": 26,
+      "clip": true,
+      "background": {
+        "angle": 135,
+        "stops": [
+          {
+            "at": 0,
+            "colour": "$headerFrom"
+          },
+          {
+            "at": 0.6,
+            "colour": "$headerMid"
+          },
+          {
+            "at": 1,
+            "colour": "$headerTo"
+          }
+        ]
+      }
+    },
+    "avatar": {
+      "display": "image",
+      "width": 158,
+      "height": 158,
+      "radius": 79,
+      "background": "#FFFFFF",
+      "border": "4 #FFFFFF",
+      "shadow": "0 5 16 rgba(11,87,208,.30)"
+    },
+    "headText": {
+      "gap": 7
+    },
+    "h1": {
+      "display": "text",
+      "size": 32,
+      "weight": 500,
+      "colour": "$headerInk",
+      "letter": -0.5,
+      "lineHeight": 1
+    },
+    "titleChip": {
+      "display": "text",
+      "self": "start",
+      "size": 11.5,
+      "weight": 500,
+      "colour": "$headerOnChip",
+      "background": "$headerChip",
+      "padding": "5 14",
+      "radius": 999
+    },
+    "subtitle": {
+      "display": "text",
+      "size": 11.5,
+      "weight": 500,
+      "colour": "$headerSubtle",
+      "boldColour": "$primary",
+      "boldWeight": 500
+    },
+    "body": {
+      "display": "row",
+      "gap": 16,
+      "grow": 1
+    },
+    "colLeft": {
+      "width": 244,
+      "gap": 8
+    },
+    "colRight": {
+      "grow": 1,
+      "gap": 13
+    },
+    "card": {
+      "background": "$card",
+      "radius": 20,
+      "padding": "11 15",
+      "border": "1 $outline"
+    },
+    "cardTint": {
+      "extends": "card",
+      "background": "$cardAlt",
+      "border": "0 $cardAlt"
+    },
+    "secTitle": {
+      "display": "row",
+      "align": "center",
+      "gap": 7,
+      "margin": "0 0 8 0"
+    },
+    "dot": {
+      "display": "ellipse",
+      "width": 8,
+      "height": 8,
+      "background": "$primary"
+    },
+    "secTitleText": {
+      "display": "text",
+      "size": 10.5,
+      "weight": 700,
+      "colour": "$primary",
+      "letter": 0.8,
+      "uppercase": true
+    },
+    "contactRow": {
+      "display": "row",
+      "align": "center",
+      "gap": 9,
+      "margin": "0 0 8 0"
+    },
+    "contactIcon": {
+      "display": "image",
+      "width": 20,
+      "height": 20,
+      "radius": 7,
+      "background": "$primaryContainer",
+      "colour": "$primary",
+      "padding": "4"
+    },
+    "contactText": {
+      "display": "text",
+      "size": 10.3,
+      "lineHeight": 1.2,
+      "grow": 1,
+      "colour": "$onSurface"
+    },
+    "lead": {
+      "display": "text",
+      "size": 9.5,
+      "weight": 500,
+      "lineHeight": 1.35,
+      "background": "$secondaryContainer",
+      "colour": "$onSecondary",
+      "radius": 13,
+      "padding": "7 11",
+      "margin": "0 0 6 0"
+    },
+    "chipGroup": {
+      "margin": "0 0 7 0",
+      "gap": 5
+    },
+    "chipLabel": {
+      "display": "text",
+      "size": 8.7,
+      "weight": 700,
+      "uppercase": true,
+      "letter": 0.5,
+      "colour": "$onSurfaceVar"
+    },
+    "chips": {
+      "display": "row-wrap",
+      "gap": 4,
+      "crossGap": 4
+    },
+    "chip": {
+      "display": "text",
+      "size": 9.3,
+      "weight": 500,
+      "padding": "3 8",
+      "radius": 999,
+      "background": "$secondaryContainer",
+      "colour": "$onSecondary"
+    },
+    "chipPri": {
+      "extends": "chip",
+      "background": "$primaryContainer",
+      "colour": "$onPrimaryContainer"
+    },
+    "chipTer": {
+      "extends": "chip",
+      "background": "$tertiaryContainer",
+      "colour": "$onTertiary"
+    },
+    "chipGhost": {
+      "extends": "chip",
+      "background": "$card",
+      "colour": "$onSurfaceVar",
+      "border": "1 $outline"
+    },
+    "lang": {
+      "margin": "0 0 7 0"
+    },
+    "langTop": {
+      "display": "row",
+      "justify": "between",
+      "margin": "0 0 4 0"
+    },
+    "langName": {
+      "display": "text",
+      "size": 10
+    },
+    "langLevel": {
+      "display": "text",
+      "size": 9,
+      "colour": "$onSurfaceVar"
+    },
+    "bar": {
+      "background": "$cardAlt",
+      "height": 6,
+      "radius": 999,
+      "clip": true
+    },
+    "barFill": {
+      "background": "$primary",
+      "height": 6,
+      "radius": 999
+    },
+    "profil": {
+      "display": "text",
+      "size": 10.6,
+      "lineHeight": 1.5,
+      "colour": "$onSurfaceVar",
+      "boldColour": "$onSurface",
+      "boldWeight": 500
+    },
+    "item": {
+      "display": "row",
+      "gap": 8,
+      "margin": "0 0 10 0",
+      "align": "stretch"
+    },
+    "itemRail": {
+      "width": 8,
+      "self": "stretch"
+    },
+    "itemDot": {
+      "display": "ellipse",
+      "width": 8,
+      "height": 8,
+      "background": "$primary",
+      "margin": "4 0 0 0"
+    },
+    "itemLine": {
+      "width": 1.5,
+      "grow": 1,
+      "background": "$outline",
+      "margin": "6 0 0 3.25"
+    },
+    "itemBody": {
+      "grow": 1
+    },
+    "itHead": {
+      "display": "row",
+      "justify": "between",
+      "align": "baseline",
+      "gap": 8
+    },
+    "itRole": {
+      "display": "text",
+      "size": 11,
+      "weight": 700,
+      "grow": 1
+    },
+    "itPeriod": {
+      "display": "text",
+      "size": 8.7,
+      "weight": 600,
+      "colour": "$primary",
+      "background": "$primaryContainer",
+      "padding": "2 8",
+      "radius": 999
+    },
+    "itOrg": {
+      "display": "text",
+      "size": 10,
+      "weight": 500,
+      "colour": "$primary",
+      "margin": "1 0 4 0"
+    },
+    "itNote": {
+      "display": "text",
+      "size": 9.6,
+      "italic": true,
+      "colour": "$onSurfaceVar",
+      "margin": "0 0 3 0"
+    },
+    "bullet": {
+      "display": "row",
+      "gap": 7,
+      "margin": "0 0 2.5 0"
+    },
+    "bulletDot": {
+      "display": "ellipse",
+      "width": 3.5,
+      "height": 3.5,
+      "background": "$primary",
+      "margin": "6 0 0 0"
+    },
+    "bulletText": {
+      "display": "text",
+      "size": 9.9,
+      "lineHeight": 1.4,
+      "grow": 1,
+      "colour": "$onSurfaceVar",
+      "boldColour": "$onSurface",
+      "boldWeight": 600
+    },
+    "bulletProj": {
+      "extends": "bullet",
+      "margin": "0 0 3 0"
+    },
+    "hex1": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 628.6,
+      "top": 3.7,
+      "width": 92.4,
+      "height": 106.7,
+      "corner": 12.7,
+      "background": "$onPrimary",
+      "opacity": 0.075
+    },
+    "hex2": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 628.6,
+      "top": 3.7,
+      "width": 92.4,
+      "height": 106.7,
+      "corner": 12.7,
+      "background": "$onPrimary",
+      "opacity": 0.1,
+      "stroke": 2.0
+    },
+    "hex3": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 674.6,
+      "top": 82.8,
+      "width": 92.4,
+      "height": 106.7,
+      "corner": 12.7,
+      "background": "$onPrimary",
+      "opacity": 0.06
+    },
+    "hex4": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 597.0,
+      "top": 99.4,
+      "width": 63.7,
+      "height": 73.6,
+      "corner": 12.7,
+      "background": "$onPrimary",
+      "opacity": 0.09,
+      "stroke": 2.0
+    },
+    "hex5": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 693.7,
+      "top": 104.9,
+      "width": 54.2,
+      "height": 62.6,
+      "corner": 12.7,
+      "background": "$onPrimary",
+      "opacity": 0.08,
+      "stroke": 2.0
+    },
+    "hex6": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 587.4,
+      "top": 20.2,
+      "width": 35.1,
+      "height": 40.5,
+      "corner": 12.7,
+      "background": "$onPrimary",
+      "opacity": 0.07
+    },
+    "hex7": {
+      "display": "polygon",
+      "sides": 6,
+      "absolute": true,
+      "left": 525.8,
+      "top": 134.3,
+      "width": 47.8,
+      "height": 55.2,
+      "corner": 12.7,
+      "background": "$onPrimary",
+      "opacity": 0.05,
+      "stroke": 2.0
+    }
+  },
+  "page": {
+    "style": "page",
+    "children": [
+      {
+        "style": "header",
+        "children": [
+          {
+            "style": "avatar",
+            "image": "{photo}"
+          },
+          {
+            "style": "headText",
+            "children": [
+              {
+                "style": "h1",
+                "text": "{name}"
+              },
+              {
+                "style": "titleChip",
+                "when": "role",
+                "text": "{role}"
+              },
+              {
+                "style": "subtitle",
+                "text": "{subtitleLine}"
+              }
+            ]
+          },
+          {
+            "style": "hex1"
+          },
+          {
+            "style": "hex2"
+          },
+          {
+            "style": "hex3"
+          },
+          {
+            "style": "hex4"
+          },
+          {
+            "style": "hex5"
+          },
+          {
+            "style": "hex6"
+          },
+          {
+            "style": "hex7"
+          }
+        ]
+      },
+      {
+        "style": "body",
+        "children": [
+          {
+            "style": "colLeft",
+            "slot": "left"
+          },
+          {
+            "style": "colRight",
+            "slot": "right"
+          }
+        ]
+      }
+    ]
+  },
+  "sections": {
+    "contact": {
+      "style": "card",
+      "children": [
+        {
+          "style": "secTitle",
+          "children": [
+            {
+              "style": "dot"
+            },
+            {
+              "style": "secTitleText",
+              "text": "{title}"
+            }
+          ]
+        },
+        {
+          "repeat": "rows",
+          "children": [
+            {
+              "style": "contactRow",
+              "children": [
+                {
+                  "style": "contactIcon",
+                  "icon": "{icon}"
+                },
+                {
+                  "style": "contactText",
+                  "text": "{text}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "chips": {
+      "style": "card",
+      "children": [
+        {
+          "style": "secTitle",
+          "children": [
+            {
+              "style": "dot"
+            },
+            {
+              "style": "secTitleText",
+              "text": "{title}"
+            }
+          ]
+        },
+        {
+          "style": "lead",
+          "when": "lead",
+          "text": "{lead}"
+        },
+        {
+          "repeat": "groups",
+          "children": [
+            {
+              "style": "chipGroup",
+              "children": [
+                {
+                  "style": "chipLabel",
+                  "when": "label",
+                  "text": "{label}"
+                },
+                {
+                  "style": "chips",
+                  "children": [
+                    {
+                      "repeat": "chips",
+                      "children": [
+                        {
+                          "style": "chip",
+                          "text": "{text}",
+                          "styleBy": {
+                            "field": "variant",
+                            "cases": {
+                              "pri": "chipPri",
+                              "ter": "chipTer",
+                              "ghost": "chipGhost"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "languages": {
+      "style": "card",
+      "children": [
+        {
+          "style": "secTitle",
+          "children": [
+            {
+              "style": "dot"
+            },
+            {
+              "style": "secTitleText",
+              "text": "{title}"
+            }
+          ]
+        },
+        {
+          "repeat": "languages",
+          "children": [
+            {
+              "style": "lang",
+              "children": [
+                {
+                  "style": "langTop",
+                  "children": [
+                    {
+                      "style": "langName",
+                      "text": "{name}"
+                    },
+                    {
+                      "style": "langLevel",
+                      "when": "level",
+                      "text": "{level}"
+                    }
+                  ]
+                },
+                {
+                  "style": "bar",
+                  "children": [
+                    {
+                      "style": "barFill",
+                      "widthFrom": "value",
+                      "id": "gauge"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "text": {
+      "style": "card",
+      "children": [
+        {
+          "style": "secTitle",
+          "children": [
+            {
+              "style": "dot"
+            },
+            {
+              "style": "secTitleText",
+              "text": "{title}"
+            }
+          ]
+        },
+        {
+          "style": "profil",
+          "text": "{text}"
+        }
+      ]
+    },
+    "list": {
+      "style": "card",
+      "children": [
+        {
+          "style": "secTitle",
+          "children": [
+            {
+              "style": "dot"
+            },
+            {
+              "style": "secTitleText",
+              "text": "{title}"
+            }
+          ]
+        },
+        {
+          "repeat": "items",
+          "children": [
+            {
+              "style": "bullet",
+              "children": [
+                {
+                  "style": "bulletDot"
+                },
+                {
+                  "style": "bulletText",
+                  "text": "{.}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "items": {
+      "style": "card",
+      "children": [
+        {
+          "style": "secTitle",
+          "children": [
+            {
+              "style": "dot"
+            },
+            {
+              "style": "secTitleText",
+              "text": "{title}"
+            }
+          ]
+        },
+        {
+          "repeat": "items",
+          "children": [
+            {
+              "style": "item",
+              "children": [
+                {
+                  "style": "itemRail",
+                  "children": [
+                    {
+                      "style": "itemDot"
+                    },
+                    {
+                      "style": "itemLine"
+                    }
+                  ]
+                },
+                {
+                  "style": "itemBody",
+                  "children": [
+                    {
+                      "style": "itHead",
+                      "children": [
+                        {
+                          "style": "itRole",
+                          "text": "{role}"
+                        },
+                        {
+                          "style": "itPeriod",
+                          "when": "period",
+                          "text": "{period}"
+                        }
+                      ]
+                    },
+                    {
+                      "style": "itOrg",
+                      "when": "org",
+                      "text": "{org}"
+                    },
+                    {
+                      "repeat": "bullets",
+                      "children": [
+                        {
+                          "style": "bullet",
+                          "children": [
+                            {
+                              "style": "bulletDot"
+                            },
+                            {
+                              "style": "bulletText",
+                              "text": "{.}"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "style": "itNote",
+                      "when": "note",
+                      "text": "{note}"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

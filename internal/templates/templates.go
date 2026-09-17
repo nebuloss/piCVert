@@ -15,10 +15,14 @@
 package templates
 
 import (
+	"io/fs"
+	"path"
+
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"picvert/internal/assets"
 	"regexp"
 	"sort"
 	"strings"
@@ -84,6 +88,9 @@ type Manifest struct {
 // Template is a manifest, its design, and where it lives.
 type Template struct {
 	Manifest
+	// FS is the template's own files, from disk or from the binary.
+	FS fs.FS
+	// Dir is the path on disk, or empty when the template is built in.
 	Dir   string
 	Theme *theme.Theme
 	Icons map[string]theme.Glyph
@@ -109,10 +116,28 @@ func bad(name, format string, args ...any) error {
 }
 
 // Registry is the set of templates this process serves.
+//
+// # IT READS THROUGH io/fs, NOT THROUGH os
+//
+// So that the same code serves a directory beside the binary and a directory
+// compiled into it. That is not an abstraction for its own sake: the service
+// claimed to be one self-contained file and was not — only the browser
+// interface was embedded, and an installed release could not render a single CV
+// because the templates were not there.
+//
+// A directory on disk still WINS when there is one, because adding a template
+// has to remain a matter of adding a folder. What is built in answers when
+// there is none, which is the case on every machine that installed a release.
 type Registry struct {
-	Dir string
-	// SharedFonts is where `@engine/` fonts live.
-	SharedFonts string
+	// FS is where templates are read from.
+	FS fs.FS
+	// Fonts is where `@engine/` fonts are read from.
+	Fonts fs.FS
+	// Dir and FontDir are the paths those came from, for error messages and
+	// for the PDF emitter, which needs a name to open. Empty when the source is
+	// the binary itself.
+	Dir     string
+	FontDir string
 	// Default names the template a document falls back to.
 	Default string
 
@@ -120,8 +145,47 @@ type Registry struct {
 	cache []*Template
 }
 
+// New serves templates from a directory, falling back to the built-in ones.
+//
+// The fallback is per-source rather than all-or-nothing: somebody who adds a
+// template directory gets their template AND the built-in fonts, which is what
+// `@engine/` references mean.
 func New(dir, sharedFonts, defaultName string) *Registry {
-	return &Registry{Dir: dir, SharedFonts: sharedFonts, Default: defaultName}
+	r := &Registry{Default: defaultName, FS: assets.Templates(), Fonts: assets.Fonts()}
+	if hasTemplates(dir) {
+		r.FS, r.Dir = os.DirFS(dir), dir
+	}
+	if _, err := os.Stat(sharedFonts); err == nil {
+		r.Fonts, r.FontDir = os.DirFS(sharedFonts), sharedFonts
+	}
+	return r
+}
+
+// hasTemplates reports whether a directory holds any, so an empty or missing
+// one falls back rather than failing.
+func hasTemplates(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, e.Name(), "template.json")); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// Source says where the templates came from, for the health report and for
+// anybody wondering why a template they added is not showing up.
+func (r *Registry) Source() string {
+	if r.Dir == "" {
+		return "built in"
+	}
+	return r.Dir
 }
 
 // Reload drops the cache, for a template added without a restart.
@@ -139,21 +203,21 @@ func (r *Registry) All() ([]*Template, error) {
 		return r.cache, nil
 	}
 
-	entries, err := os.ReadDir(r.Dir)
+	entries, err := fs.ReadDir(r.FS, ".")
 	if err != nil {
-		return nil, fmt.Errorf("no templates folder at %s", r.Dir)
+		return nil, fmt.Errorf("no templates (%s): %w", r.Source(), err)
 	}
 	var names []string
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(r.Dir, e.Name(), "template.json")); err == nil {
+		if _, err := fs.Stat(r.FS, path.Join(e.Name(), "template.json")); err == nil {
 			names = append(names, e.Name())
 		}
 	}
 	if len(names) == 0 {
-		return nil, fmt.Errorf("no template in %s — each one needs a template.json", r.Dir)
+		return nil, fmt.Errorf("no template in %s — each one needs a template.json", r.Source())
 	}
 	sort.Strings(names)
 
@@ -162,7 +226,7 @@ func (r *Registry) All() ([]*Template, error) {
 	// make a document resolve to whichever loaded first — that is, at random.
 	byUUID := map[string]string{}
 	for _, name := range names {
-		t, err := r.load(filepath.Join(r.Dir, name), name)
+		t, err := r.load(name)
 		if err != nil {
 			return nil, err
 		}
@@ -177,12 +241,16 @@ func (r *Registry) All() ([]*Template, error) {
 	return loaded, nil
 }
 
-func (r *Registry) load(dir, name string) (*Template, error) {
-	m, err := r.readManifest(dir, name)
+func (r *Registry) load(name string) (*Template, error) {
+	sub, err := fs.Sub(r.FS, name)
+	if err != nil {
+		return nil, bad(name, "%v", err)
+	}
+	m, err := r.readManifest(sub, name)
 	if err != nil {
 		return nil, err
 	}
-	th, err := theme.Load(dir)
+	th, err := theme.Load(sub)
 	if err != nil {
 		return nil, bad(name, "%v", err)
 	}
@@ -195,12 +263,22 @@ func (r *Registry) load(dir, name string) (*Template, error) {
 			return nil, bad(name, "accepts “%s” sections but composes none", slot.Type)
 		}
 	}
-	icons, order := readIcons(dir)
-	return &Template{Manifest: *m, Dir: dir, Theme: th, Icons: icons, IconOrder: order}, nil
+	icons, order := readIcons(sub)
+	// Dir is the path on disk when there is one, so the PDF emitter can open a
+	// font by name. Empty when the template is built in, and the emitter then
+	// reads through FS instead.
+	dir := ""
+	if r.Dir != "" {
+		dir = filepath.Join(r.Dir, name)
+	}
+	return &Template{
+		Manifest: *m, Dir: dir, FS: sub,
+		Theme: th, Icons: icons, IconOrder: order,
+	}, nil
 }
 
-func (r *Registry) readManifest(dir, name string) (*Manifest, error) {
-	raw, err := os.ReadFile(filepath.Join(dir, "template.json"))
+func (r *Registry) readManifest(dir fs.FS, name string) (*Manifest, error) {
+	raw, err := fs.ReadFile(dir, "template.json")
 	if err != nil {
 		return nil, bad(name, "unreadable template.json (%v)", err)
 	}
@@ -262,7 +340,7 @@ func (r *Registry) readManifest(dir, name string) (*Manifest, error) {
 		if strings.ContainsAny(m.Cover, `\/`) || !coverRE.MatchString(m.Cover) {
 			return nil, bad(name, "“cover” must be a plain .svg or .png file name inside the template folder")
 		}
-		if _, err := os.Stat(filepath.Join(dir, m.Cover)); err != nil {
+		if _, err := fs.Stat(dir, m.Cover); err != nil {
 			return nil, bad(name, "cover “%s” not found", m.Cover)
 		}
 	}
@@ -278,15 +356,16 @@ func (r *Registry) readManifest(dir, name string) (*Manifest, error) {
 			if src.File == "" {
 				return nil, bad(name, "fonts[%d].sources[%d].file is required", i, j)
 			}
-			abs, ok := r.FontPath(dir, src.File)
-			if !ok {
-				return nil, bad(name, "fonts[%d].sources[%d].file “%s” escapes the template folder", i, j, src.File)
-			}
 			// Checked now rather than at render time: a missing font shows up
 			// as a CV in the wrong typeface, months later, on someone else's
 			// machine.
-			if _, err := os.Stat(abs); err != nil {
-				return nil, bad(name, "font file “%s” not found", src.File)
+			//
+			// Through the same reader the renderer uses, so a font that
+			// validates here is one that can actually be read — checking a
+			// path and reading through a filesystem were two answers to one
+			// question, and the second was the one that mattered.
+			if err := r.checkFont(dir, src.File); err != nil {
+				return nil, bad(name, "fonts[%d].sources[%d]: %v", i, j, err)
 			}
 			if src.Style != "" && src.Style != "normal" && src.Style != "italic" {
 				return nil, bad(name, "fonts[%d].sources[%d].style must be “normal” or “italic”", i, j)
@@ -304,7 +383,13 @@ func (r *Registry) FontPath(templateDir, file string) (string, bool) {
 		if name == "" || strings.ContainsAny(name, `\/`) {
 			return "", false
 		}
-		return filepath.Join(r.SharedFonts, name), true
+		if r.FontDir == "" {
+			return "", false
+		}
+		return filepath.Join(r.FontDir, name), true
+	}
+	if templateDir == "" {
+		return "", false
 	}
 	base, err := filepath.Abs(templateDir)
 	if err != nil {
@@ -318,6 +403,48 @@ func (r *Registry) FontPath(templateDir, file string) (string, bool) {
 		return "", false
 	}
 	return abs, true
+}
+
+// checkFont reports whether a font a manifest names can be read.
+//
+// Takes the template's own files rather than a *Template, because this runs
+// while the template is still being loaded and there is nothing to pass yet.
+func (r *Registry) checkFont(dir fs.FS, file string) error {
+	if strings.HasPrefix(file, sharedPrefix) {
+		name := strings.TrimPrefix(file, sharedPrefix)
+		if name == "" || strings.ContainsAny(name, `\/`) {
+			return fmt.Errorf("“%s” is not a font name", file)
+		}
+		if _, err := fs.Stat(r.Fonts, name); err != nil {
+			return fmt.Errorf("shared font “%s” not found", name)
+		}
+		return nil
+	}
+	if _, err := fs.Stat(dir, file); err != nil {
+		return fmt.Errorf("font “%s” not found in the template", file)
+	}
+	return nil
+}
+
+// ReadFont is a font's bytes, from wherever that template's files are.
+//
+// THE ONE WAY FONTS ARE READ, because a font read from a different place than
+// it was measured from is the fault this whole engine exists to prevent — and
+// the path-returning version above cannot answer for a template compiled into
+// the binary.
+func (r *Registry) ReadFont(t *Template, file string) ([]byte, error) {
+	if strings.HasPrefix(file, sharedPrefix) {
+		name := strings.TrimPrefix(file, sharedPrefix)
+		// A single segment, for the same reason as above: this is a font name,
+		// not a path, and `..` in it is somebody asking for something else.
+		if name == "" || strings.ContainsAny(name, `\/`) {
+			return nil, fmt.Errorf("not a font name: %q", file)
+		}
+		return fs.ReadFile(r.Fonts, name)
+	}
+	// Within the template's own files. fs.FS refuses a path that escapes its
+	// root by construction, so there is nothing to check here.
+	return fs.ReadFile(t.FS, file)
 }
 
 func known(v string, in []string) bool {
@@ -335,9 +462,9 @@ func known(v string, in []string) bool {
 // the section types it accepts, and confronting the two is the conformance
 // kit's job. Failing here would take the whole registry down over a file that
 // may legitimately be absent.
-func readIcons(dir string) (map[string]theme.Glyph, []string) {
+func readIcons(dir fs.FS) (map[string]theme.Glyph, []string) {
 	out := map[string]theme.Glyph{}
-	raw, err := os.ReadFile(filepath.Join(dir, "icons.json"))
+	raw, err := fs.ReadFile(dir, "icons.json")
 	if err != nil {
 		return out, nil
 	}

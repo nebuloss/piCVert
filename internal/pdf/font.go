@@ -3,6 +3,7 @@ package pdf
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -31,7 +32,11 @@ type Face struct {
 	Weight int
 	Italic bool
 
+	// file names where the bytes came from, for messages only.
 	file string
+	// raw is what this face was parsed from AND what it embeds. One field, so
+	// the two cannot be different files — see ParseFace.
+	raw  []byte
 	font *sfnt.Font
 	upem float64
 	// glyphs maps a rune to its glyph index, filled as text is drawn. Only the
@@ -58,15 +63,51 @@ func LoadFace(name, family string, weight int, italic bool, file string) (*Face,
 	if err != nil {
 		return nil, fmt.Errorf("font %s: %w", embed, err)
 	}
+	// Through ParseFace, so the path-taking and byte-taking routes cannot hold
+	// the invariant differently.
+	return ParseFace(name, family, weight, italic, embed, raw)
+}
+
+// ParseFace builds a face from bytes somebody else read.
+//
+// The form the engine uses, because a template's fonts may be in a directory or
+// inside the binary and only the registry knows which. The caller has already
+// chosen the subset where there is one — see SubsetName.
+// ParseFace builds a face from bytes somebody else read.
+//
+// # THE BYTES ARE KEPT, NOT THE PATH
+//
+// A face ENCODES text with the font it parsed and EMBEDS the file it names, and
+// those two must be the same file: a subsetter renumbers glyphs, so encoding
+// against one and embedding another produces a page of plausible gibberish —
+// with the metrics still correct, because the widths came from the same wrong
+// indices. That is recorded in docs/STATUS.md as a lesson this codebase paid
+// for once, and it was paid for a second time here: reading a path at write
+// time meant the two could differ, and did.
+//
+// Holding the bytes makes them the same by construction, and is also the only
+// way a font compiled into the binary can be embedded at all — there is no path
+// to re-read.
+func ParseFace(name, family string, weight int, italic bool, from string, raw []byte) (*Face, error) {
 	font, err := sfnt.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("font %s is not readable: %w", embed, err)
+		return nil, fmt.Errorf("font %s is not readable: %w", from, err)
 	}
 	return &Face{
 		Name: name, Family: family, Weight: weight, Italic: italic,
-		file: embed, font: font, upem: float64(font.UnitsPerEm()),
+		file: from, raw: raw, font: font, upem: float64(font.UnitsPerEm()),
 		glyphs: map[rune]uint16{}, widths: map[uint16]int{},
 	}, nil
+}
+
+// SubsetName is the trimmed font beside a full one, by convention.
+//
+// The PDF embeds the smallest file that draws the text, and the subsets are
+// generated beside the originals. Exported because the caller now reads the
+// bytes and therefore has to decide which file to read — this states the rule
+// once rather than leaving it to be re-derived.
+func SubsetName(file string) string {
+	return strings.TrimSuffix(file, path.Ext(file)) + ".subset.ttf"
 }
 
 // embedFileFor is the file to carry inside the PDF: the subset where one was
@@ -126,9 +167,14 @@ func (f *Face) Encode(text string) string {
 // the several thousand a complete Roboto holds. The page and the PDF then also
 // carry literally the same bytes, which is one fewer thing that can differ.
 func (f *Face) write(w *writer) int {
-	raw, err := os.ReadFile(f.file)
-	if err != nil {
-		return 0
+	// The bytes this face was PARSED from, never a re-read. See ParseFace.
+	raw := f.raw
+	if raw == nil {
+		var err error
+		raw, err = os.ReadFile(f.file)
+		if err != nil {
+			return 0
+		}
 	}
 	fileID := w.addStream(fmt.Sprintf("/Length1 %d", len(raw)), raw)
 

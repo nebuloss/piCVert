@@ -1,6 +1,9 @@
 package pdf
 
 import (
+	"bytes"
+	"compress/zlib"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -169,4 +172,115 @@ func TestCharacterSpacingDoesNotLeakBetweenRuns(t *testing.T) {
 				"so it inherits whatever the last one left:\n%s", i, body)
 		}
 	}
+}
+
+// A face embeds the font it encoded with, and no other.
+//
+// # WHY THIS IS TESTED RATHER THAN TRUSTED
+//
+// A subsetter renumbers glyphs. Encode against one file and embed another and
+// the PDF draws plausible gibberish — with the metrics still correct, because
+// the widths came from the same wrong indices, so it looks like a font problem
+// rather than a wiring one.
+//
+// docs/STATUS.md records that as a lesson this codebase paid for. It was then
+// paid for a SECOND time: a face held a path and re-read it when writing, so
+// the bytes it parsed and the bytes it embedded could differ, and a change that
+// passed the subset to one and the original name to the other made them differ.
+// Nothing caught it, because the page was fine and the PDF looked fine — only
+// extracting its text showed every character shifted by a constant.
+func TestAFaceEmbedsWhatItEncodedWith(t *testing.T) {
+	root := checkout(t)
+	full := filepath.Join(root, "fonts", "Roboto-Regular.ttf")
+	subset := filepath.Join(root, "fonts", "Roboto-Regular.subset.ttf")
+
+	raw, err := os.ReadFile(subset)
+	if err != nil {
+		t.Skipf("no subset to test with: %v", err)
+	}
+	whole, err := os.ReadFile(full)
+	if err != nil {
+		t.Skip("no font to test with")
+	}
+	if len(raw) >= len(whole) {
+		t.Skip("the subset is not smaller; nothing to tell apart")
+	}
+
+	// Parsed from the SUBSET, named after the original — which is exactly the
+	// mistake, and which the face must not act on.
+	face, err := ParseFace("", "Roboto", 400, false, full, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doc := New(794, 1123, "test", "en")
+	doc.AddFace(face)
+
+	// Text has to be DRAWN, or the face is never used and never written out —
+	// a PDF only embeds the fonts it drew with. Measured with the same bytes
+	// the face parsed, which is the arrangement under test.
+	fonts := layout.NewFonts()
+	if err := fonts.Parse("Roboto", 400, false, subset, raw); err != nil {
+		t.Fatal(err)
+	}
+	page := layout.Box(
+		layout.Style{Display: layout.Block, Width: 794, Height: 1123},
+		layout.Para(layout.Style{
+			Display: layout.Text, Family: "Roboto", Size: 12, Width: 400,
+		}, "Guillaume Chayé"),
+	)
+	frame := layout.NewEngine(fonts).Layout(page, 794, 1123)
+	out := doc.Render(frame)
+
+	// Streams are deflated, so the font has to be inflated back out before it
+	// can be compared. Which file went in is the whole question.
+	embedded := inflatedStreams(out)
+	found := false
+	for _, stream := range embedded {
+		if bytes.Equal(stream, raw) {
+			found = true
+		}
+		if bytes.Equal(stream, whole) {
+			t.Error("the PDF embedded the ORIGINAL font while encoding against " +
+				"the subset: every glyph index in it is wrong")
+		}
+	}
+	if !found {
+		t.Errorf("the PDF does not embed the font the face parsed (%d streams, "+
+			"none matching) — it would draw gibberish, and the metrics would "+
+			"hide it", len(embedded))
+	}
+}
+
+// inflatedStreams is every deflated stream in a PDF, decompressed.
+//
+// Scanned from each `endstream` BACKWARDS to the `stream` that opened it. The
+// obvious direction does not work: font data contains the bytes "stream", so
+// searching forwards finds one inside the font and then inflates from the
+// middle of it — which fails silently and reports a PDF with one stream in it.
+func inflatedStreams(pdf []byte) [][]byte {
+	var out [][]byte
+	const open, close = "stream\n", "endstream"
+
+	for i := 0; i < len(pdf); {
+		at := bytes.Index(pdf[i:], []byte(close))
+		if at < 0 {
+			break
+		}
+		at += i
+		// The `stream` that opened this one is the LAST before it.
+		from := bytes.LastIndex(pdf[:at], []byte(open))
+		if from >= 0 {
+			body := pdf[from+len(open) : at]
+			body = bytes.TrimSuffix(body, []byte("\n"))
+			if r, err := zlib.NewReader(bytes.NewReader(body)); err == nil {
+				if raw, err := io.ReadAll(r); err == nil {
+					out = append(out, raw)
+				}
+				r.Close()
+			}
+		}
+		i = at + len(close)
+	}
+	return out
 }

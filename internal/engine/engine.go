@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -170,25 +171,83 @@ func (e *Engine) Prepare(doc document.Doc, assetDir string) (*Page, error) {
 	}, nil
 }
 
+// webFonts reads the compressed faces a page embeds.
+//
+// The .woff2 beside each .ttf: the same outlines, subset and compressed, so the
+// file the engine MEASURED with and the file the page DRAWS with are the same
+// design. The conformance kit refuses a template that ships one without the
+// other, which is what makes the error below unreachable in practice and worth
+// keeping anyway.
+func (e *Engine) webFonts(tpl *templates.Template) ([]layout.WebFont, error) {
+	var out []layout.WebFont
+	for _, decl := range tpl.FontDecls() {
+		for _, src := range decl.Sources {
+			name := strings.TrimSuffix(src.File, path.Ext(src.File)) + ".woff2"
+			raw, err := e.Registry.ReadFont(tpl, name)
+			if err != nil {
+				return nil, fmt.Errorf("web font %s: %w", name, err)
+			}
+			out = append(out, layout.WebFont{
+				Family: decl.Family, Weight: src.Weight,
+				Italic: src.Style == "italic", WOFF2: raw,
+			})
+		}
+	}
+	return out, nil
+}
+
+// loadFonts registers the faces a template declares.
+//
+// THROUGH THE REGISTRY, which is the only thing that knows whether a template
+// lives in a directory or inside the binary. Reading a path here worked for as
+// long as every deployment was a checkout — and produced "default template not
+// found" the first time somebody installed a release.
+//
+// The file measured, the file drawn and the file sent are one file, which is
+// why this is not left to whatever fonts a machine has installed.
+func (e *Engine) loadFonts(fonts *layout.Fonts, tpl *templates.Template) error {
+	for _, decl := range tpl.FontDecls() {
+		for _, src := range decl.Sources {
+			raw, err := e.Registry.ReadFont(tpl, src.File)
+			if err != nil {
+				return fmt.Errorf("font %s: %w", src.File, err)
+			}
+			weight := layout.Weight(400)
+			if src.Weight != 0 {
+				weight = layout.Weight(src.Weight)
+			}
+			if err := fonts.Parse(decl.Family, weight, src.Style == "italic",
+				src.File, raw); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (e *Engine) fontsFor(tpl *templates.Template) (*layout.Fonts, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if hit := e.faces[tpl.Dir]; hit != nil {
+	// Keyed by UUID rather than by directory: a built-in template has no
+	// directory, so every one of them would share the empty string.
+	if hit := e.faces[tpl.UUID]; hit != nil {
 		return hit, nil
 	}
 	fonts := layout.NewFonts()
-	if err := layout.LoadTemplateFonts(fonts, tpl.Dir,
-		filepath.Join(e.Home, "fonts"), tpl.FontDecls()); err != nil {
+	if err := e.loadFonts(fonts, tpl); err != nil {
 		return nil, err
 	}
-	e.faces[tpl.Dir] = fonts
+	e.faces[tpl.UUID] = fonts
 	return fonts, nil
 }
 
 // HTML wraps a laid-out page into a standalone file.
 func (e *Engine) HTML(p *Page) (string, error) {
-	return layout.Document(p.Render, p.Template.FontDecls(), p.Template.Dir,
-		filepath.Join(e.Home, "fonts"), p.Title())
+	faces, err := e.webFonts(p.Template)
+	if err != nil {
+		return "", err
+	}
+	return layout.Document(p.Render, faces, p.Title())
 }
 
 // PDF draws the page a second time, from the same frame.
@@ -203,15 +262,23 @@ func (e *Engine) PDF(p *Page, sourceName string, source []byte) ([]byte, error) 
 	// design exists to remove.
 	for _, decl := range p.Template.FontDecls() {
 		for _, src := range decl.Sources {
-			path, ok := e.Registry.FontPath(p.Template.Dir, src.File)
-			if !ok {
-				return nil, fmt.Errorf("font %s not found", src.File)
+			// The subset where there is one, the whole face otherwise. The PDF
+			// embeds the smallest file that draws the text, and reading the
+			// full face when a subset exists triples what the file weighs.
+			file := src.File
+			raw, err := e.Registry.ReadFont(p.Template, pdf.SubsetName(file))
+			if err != nil {
+				raw, err = e.Registry.ReadFont(p.Template, file)
+				if err != nil {
+					return nil, fmt.Errorf("font %s: %w", file, err)
+				}
 			}
 			weight := src.Weight
 			if weight == 0 {
 				weight = 400
 			}
-			face, err := pdf.LoadFace("", decl.Family, weight, src.Style == "italic", path)
+			face, err := pdf.ParseFace("", decl.Family, weight,
+				src.Style == "italic", file, raw)
 			if err != nil {
 				return nil, err
 			}
