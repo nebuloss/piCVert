@@ -31,15 +31,15 @@ export class Api {
   private readonly token: string;
   private readonly http: HttpClient;
 
+  /** Which tab this is; see lease.ts for why the cookie alone is not enough. */
+  window = '';
+
   constructor({ slug, token, base }: ApiOptions) {
     this.slug = slug;
     this.base = base;
     this.token = token;
     this.http = new HttpClient(token);
   }
-
-  /** editor is the identity of this window, once the server has minted one. */
-  editor = '';
 
   /** The language is a query parameter on nearly everything, so it is built once. */
   #q(lang: string): string {
@@ -70,7 +70,7 @@ export class Api {
    * pause rather than on a letter.
    */
   save(doc: Cv, lang: string, revision: string): Promise<Tagged<SaveAnswer>> {
-    return this.http.tagged<SaveAnswer>('PUT', this.#p('', lang), doc, revision, this.editor);
+    return this.http.tagged<SaveAnswer>('PUT', this.#p('', lang), doc, revision, this.window);
   }
 
   /**
@@ -127,13 +127,14 @@ export class Api {
   /**
    * lease asks to edit, or says this window is still here.
    *
-   * The holder identity goes in a header rather than the body because the
-   * heartbeat has no body, and because every request that writes carries it
-   * too — one place for it beats two.
+   * WHICH window is not stated anywhere here. The server gives a browser an
+   * identity as a cookie it cannot read, and the browser sends it back by
+   * itself — so this code neither knows nor can invent one, and a reload gets
+   * the same lease back rather than being told it is somebody else.
    */
-  async lease(lang: string, holder: string, renew: boolean): Promise<LeaseState> {
+  async lease(lang: string, renew: boolean): Promise<LeaseState> {
     const path = this.#p('/lease', lang) + (lang ? '&' : '?') + `renew=${renew ? '1' : '0'}`;
-    return this.http.post<LeaseState>(path, undefined, undefined, holder);
+    return this.http.post<LeaseState>(path, undefined, undefined, this.window);
   }
 
   /**
@@ -143,10 +144,15 @@ export class Api {
    * goes away — and this one is sent at exactly that moment. Nothing depends
    * on it: the lease lapses by itself in under a minute. It is the difference
    * between the next person waiting a moment and waiting the timeout.
+   *
+   * Same-origin, so it carries the identity cookie by itself. The token goes
+   * in the query string because a beacon cannot set a header, and this is the
+   * one request that has no alternative.
    */
-  releaseLease(lang: string, holder: string): void {
+  releaseLease(lang: string): void {
     const path = this.#p('/lease', lang) + (lang ? '&' : '?') +
-      `editor=${encodeURIComponent(holder)}&token=${encodeURIComponent(this.token)}&release=1`;
+      `token=${encodeURIComponent(this.token)}&release=1` +
+      `&window=${encodeURIComponent(this.window)}`;
     navigator.sendBeacon(path);
   }
 

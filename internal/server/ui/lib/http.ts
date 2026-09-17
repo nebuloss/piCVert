@@ -75,13 +75,13 @@ export class HttpClient {
    * site to buy nothing.
    */
   async tagged<T>(
-    method: string, path: string, body?: unknown, revision?: string, holder?: string,
+    method: string, path: string, body?: unknown, revision?: string, window?: string,
   ): Promise<Tagged<T>> {
-    return this.exchange<T>(method, path, { body, revision, holder });
+    return this.exchange<T>(method, path, { body, revision, window });
   }
 
-  post<T>(path: string, body?: unknown, type?: string, holder?: string): Promise<T> {
-    return this.send<T>('POST', path, body, type, holder);
+  post<T>(path: string, body?: unknown, type?: string, window?: string): Promise<T> {
+    return this.send<T>('POST', path, body, type, window);
   }
 
   put<T>(path: string, body?: unknown): Promise<T> {
@@ -107,27 +107,27 @@ export class HttpClient {
    */
   /** send is the common case: the body, and nothing about the response. */
   private async send<T>(
-    method: string, path: string, body?: unknown, type?: string, holder?: string,
+    method: string, path: string, body?: unknown, type?: string, window?: string,
   ): Promise<T> {
-    return (await this.exchange<T>(method, path, { body, type, holder })).body;
+    return (await this.exchange<T>(method, path, { body, type, window })).body;
   }
 
   /** What a request may carry beyond its path. */
   private async exchange<T>(
     method: string,
     path: string,
-    { body, type, revision, holder }:
-      { body?: unknown; type?: string; revision?: string; holder?: string },
+    { body, type, revision, window }:
+      { body?: unknown; type?: string; revision?: string; window?: string },
   ): Promise<Tagged<T>> {
     const headers: Record<string, string> = {};
     if (this.token) headers['X-CV-Token'] = this.token;
     // The revision this client believes it is editing. The server refuses the
     // write if the document has moved since — see store.WriteIfUnchanged.
     if (revision) headers['If-Match'] = `"${revision}"`;
-    // Which editing window this is. The server refuses a write from a window
-    // that no longer holds the lease — without it the lease would be a
-    // courtesy the interface observes and nothing else does.
-    if (holder) headers['X-CV-Editor'] = holder;
+    // Which BROWSER this is travels as a cookie, sent automatically. This says
+    // which TAB of it — the two together are an editing window, because one
+    // browser can have the same CV open twice.
+    if (window) headers['X-CV-Window'] = window;
 
     let payload: BodyInit | undefined;
     if (body !== undefined) {

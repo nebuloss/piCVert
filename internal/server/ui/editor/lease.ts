@@ -11,6 +11,23 @@
  * way this tab may no longer save, and the difference is of no use to the
  * person: what they need to know is that they must stop.
  *
+ * # WHAT IDENTIFIES A WINDOW
+ *
+ * Two halves, because one of them cannot do it alone:
+ *
+ *   A COOKIE, set by the server and unreadable by script, says which BROWSER.
+ *     It survives a reload, which is the whole reason it exists: the identity
+ *     used to be minted per page load, so pressing F5 made a stranger of you
+ *     and you were told somebody else was editing your own CV.
+ *
+ *   A NONCE in sessionStorage says which TAB. Without it a browser with the
+ *     same CV open twice would share one identity and both tabs would think
+ *     they held the lease. sessionStorage is exactly right here: per tab, and
+ *     surviving a reload of that tab.
+ *
+ * Only the nonce is in reach of this code, and forging one buys nothing —
+ * it needs the cookie too, and anything that has that is already this browser.
+ *
  * # WHY THE HEARTBEAT IS NOT THE SAVE
  *
  * Saving already happens on every change, and it renews the lease as a side
@@ -27,7 +44,6 @@ import type { Api } from './api.ts';
 /** What the server says about a request for the lease. */
 export interface LeaseState {
   held: boolean;
-  editor: string;
   heartbeatMs: number;
   untilMs?: number;
   heldBy?: string;
@@ -44,8 +60,23 @@ export interface LeaseEvents {
   [key: string]: unknown;
 }
 
+/**
+ * windowID is this tab, for as long as this tab exists.
+ *
+ * sessionStorage rather than a variable: a reload keeps it, which is what makes
+ * reloading the editor keep the lease rather than queue behind itself.
+ */
+export function windowID(): string {
+  const key = 'picvert.window';
+  let id = sessionStorage.getItem(key);
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    sessionStorage.setItem(key, id);
+  }
+  return id;
+}
+
 export class Lease extends Emitter<LeaseEvents> {
-  #holder = '';
   #timer = 0;
   #held = false;
   #released = false;
@@ -57,16 +88,11 @@ export class Lease extends Emitter<LeaseEvents> {
     super();
   }
 
-  get holder(): string { return this.#holder; }
   get held(): boolean { return this.#held; }
 
-  /** ask requests the lease, minting an identity on the first attempt. */
+  /** ask requests the lease. */
   async ask(): Promise<LeaseState> {
-    const state = await this.api.lease(this.lang, this.#holder, false);
-    // The server mints the identity, and this tab keeps it. A client that
-    // chose its own could name itself whatever the current holder is called
-    // and take the lease from them.
-    this.#holder = state.editor;
+    const state = await this.api.lease(this.lang, false);
     const was = this.#held;
     this.#held = state.held;
     if (state.held) {
@@ -87,7 +113,7 @@ export class Lease extends Emitter<LeaseEvents> {
   private async beat(): Promise<void> {
     if (this.#released) return;
     try {
-      const state = await this.api.lease(this.lang, this.#holder, true);
+      const state = await this.api.lease(this.lang, true);
       if (!state.held) this.drop();
     } catch {
       // A failed heartbeat is not a lost lease: the connection may be down for
@@ -143,8 +169,7 @@ export class Lease extends Emitter<LeaseEvents> {
   release(): void {
     this.#released = true;
     clearInterval(this.#timer);
-    if (!this.#holder) return;
-    this.api.releaseLease(this.lang, this.#holder);
+    this.api.releaseLease(this.lang);
   }
 }
 

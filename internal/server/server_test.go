@@ -110,6 +110,39 @@ func call(t *testing.T, h http.Handler, method, path string, body any, headers m
 	return w
 }
 
+// callAs is `call` carrying the cookies an earlier response set.
+//
+// What a browser does by itself, and what makes the difference between one
+// window and two testable: two calls that carry the same cookie are the same
+// window, and two that do not are not.
+func callAs(t *testing.T, h http.Handler, method, path string, body any,
+	headers map[string]string, previous ...*httptest.ResponseRecorder) *httptest.ResponseRecorder {
+	t.Helper()
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader = bytes.NewReader(raw)
+	}
+	r := httptest.NewRequest(method, path, reader)
+	if body != nil {
+		r.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range headers {
+		r.Header.Set(k, v)
+	}
+	for _, response := range previous {
+		for _, cookie := range response.Result().Cookies() {
+			r.AddCookie(cookie)
+		}
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
 func decode(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var out map[string]any

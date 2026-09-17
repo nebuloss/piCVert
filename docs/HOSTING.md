@@ -126,6 +126,26 @@ thought. Waiting polls until it is free and then opens the editor. Most people
 opening a CV wanted to look at it, which is why that is where an undecided
 person ends up.
 
+### What identifies an editor
+
+Two halves, because neither does it alone:
+
+- a **cookie**, set by the server and unreadable by script, says which *browser*
+- a **nonce** in `sessionStorage` says which *tab*
+
+The cookie survives a reload, which is the whole reason it exists: the identity
+used to be made fresh on every page load, so pressing F5 made a stranger of you
+and you were told somebody else was editing your own CV — for the length of the
+timeout. The nonce survives a reload of its own tab but not a new one, so a
+browser with the same CV open twice is two editors rather than one confused one.
+
+Only the nonce is in reach of page script, and forging one buys nothing: it
+needs the cookie too, and anything that has that is already this browser. The
+cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` over HTTPS.
+
+It is not a credential — it says which window you are, not that you may edit.
+A write still needs the link token as well.
+
 ### It cannot be held for ever
 
 The holder is a browser tab, and a tab can be closed, crash, lose its network

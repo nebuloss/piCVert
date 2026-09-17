@@ -26,7 +26,7 @@ import type { SaveState } from './autosave.ts';
 import { Form } from './form.ts';
 import { FitReport, Preview } from './preview.ts';
 import { HistoryPanel, LanguageBar } from './panels.ts';
-import { Lease } from './lease.ts';
+import { Lease, windowID } from './lease.ts';
 import { BusyNotice } from './busy.ts';
 
 class Editor {
@@ -118,6 +118,7 @@ class Editor {
    */
   private async claim(): Promise<boolean> {
     this.lease?.release();
+    this.api.window = windowID();
     this.lease = new Lease(this.api, this.lang);
     this.lease.on('lost', () => this.lostTheLease());
 
@@ -128,7 +129,6 @@ class Editor {
       this.fail(error);
       return false;
     }
-    this.api.editor = this.lease.holder;
     if (state.held) return true;
 
     // Somebody else has it. The notice offers waiting or just looking, and
@@ -138,7 +138,6 @@ class Editor {
       void this.lease?.waitForIt((next) => {
         this.busy.progress(next);
         if (next.held) {
-          this.api.editor = this.lease?.holder ?? '';
           this.busy.close();
           void this.open(this.lang);
         }

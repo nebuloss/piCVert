@@ -33,32 +33,142 @@ func leaseKey(slug, language string) string {
 	return slug + "|" + language
 }
 
-// holderHeader is how an editor says which session it is.
-const holderHeader = "X-CV-Editor"
+// holderCookie is how a browser remembers which editor it is.
+const holderCookie = "cv_editor"
 
-// holderOf reads the identity from a header, or from the query string.
+// windowHeader is which TAB of that browser is asking.
 //
-// The query string is for ONE caller: the beacon a tab sends as it closes.
-// sendBeacon cannot set headers, and a lease released the moment a window goes
-// is the difference between the next person waiting a moment and waiting the
-// whole timeout. It is not a weakening — the identity is not a secret, it only
-// says which window you are, and a write still needs the link token as well.
+// A cookie identifies a browser, and a browser can have the same CV open in two
+// tabs — which would then share an identity and both believe they hold the
+// lease. The two halves together are what make an editing WINDOW:
+//
+//	cookie   durable, unreadable by script, distinct per browser
+//	header   per tab, from sessionStorage, and survives a reload of that tab
+//
+// Forging the header buys nothing. Doing so requires the cookie as well, and
+// anybody who has that is already this browser — so the worst available attack
+// is impersonating one's own other tab.
+const windowHeader = "X-CV-Window"
+
+// holderOf reads the identity a browser was given, if it has one.
+//
+// # WHY A COOKIE
+//
+// It was minted per page load and kept in a JavaScript variable, and that had
+// one obvious consequence nobody enjoys: pressing F5 produced a NEW identity,
+// the server quite correctly refused it because the old one still held the
+// lease, and the person was told somebody else was editing their CV. That
+// somebody was them, for three quarters of a minute.
+//
+// A cookie is the browser's own memory of itself, which is exactly what this
+// needs to be. A reload carries it, so a reload gets the same lease back.
+//
+// Three other things follow, and each of them removes something:
+//
+//   - It can be HttpOnly, so no script can read it and none can forge one. The
+//     header it replaces was set by page script, which could therefore have
+//     claimed to be any window it liked.
+//   - The beacon a closing tab sends carries it automatically, so the identity
+//     no longer has to travel in a query string — where it went into every
+//     proxy log on the way.
+//   - Nothing in the interface tracks it at all. The browser does it.
+//
+// It is not a credential. It says WHICH WINDOW you are, not that you may edit;
+// a write still needs the link token as well. Two people who somehow shared one
+// would be two people sharing a browser, and they have larger problems.
 func holderOf(r *http.Request) lease.Holder {
-	if h := r.Header.Get(holderHeader); h != "" {
-		return lease.Holder(h)
+	c, err := r.Cookie(holderCookie)
+	if err != nil || c.Value == "" {
+		return ""
 	}
-	return lease.Holder(r.URL.Query().Get("editor"))
+	return joinHolder(c.Value, tabOf(r))
+}
+
+// editorOf is holderOf, giving a browser an identity if it has none yet.
+//
+// Separate from holderOf, and the separation is load-bearing twice over.
+//
+// It mints, so only ASKING FOR A LEASE creates an identity. A write does not:
+// the command line and anyone with curl present no identity and are let
+// through, and minting one for them would turn them into a window that holds
+// nothing and is refused.
+//
+// And it composes the SAME WAY holderOf does — which is the bug this shape
+// exists to prevent. The first request has no cookie, so the first version
+// minted one and took the lease under the browser half ALONE, while every
+// request after it presented browser-and-tab. The first window therefore held
+// a lease under an identity it could never present again, and was locked out
+// of its own CV by itself. It took a log line to see, because every individual
+// answer was correct.
+func (s *Server) editorOf(w http.ResponseWriter, r *http.Request) lease.Holder {
+	browser := ""
+	if c, err := r.Cookie(holderCookie); err == nil {
+		browser = c.Value
+	}
+	if browser == "" {
+		browser = string(lease.NewHolder())
+		rememberHolder(w, r, lease.Holder(browser))
+	}
+	return joinHolder(browser, tabOf(r))
+}
+
+// tabOf is which tab of the browser is asking, if it says.
+//
+// A beacon cannot set a header, so it puts the same value in the query string.
+// The cookie is what makes either of them trustworthy: without it the tab name
+// identifies nothing.
+func tabOf(r *http.Request) string {
+	if tab := r.Header.Get(windowHeader); tab != "" {
+		return tab
+	}
+	return r.URL.Query().Get("window")
+}
+
+// joinHolder makes one identity out of the browser and the tab.
+//
+// ONE function, used by both readers, because two spellings of this is exactly
+// how a lease comes to be held under a name nobody can say again.
+func joinHolder(browser, tab string) lease.Holder {
+	if tab == "" {
+		return lease.Holder(browser)
+	}
+	return lease.Holder(browser + ":" + tab)
+}
+
+// rememberHolder gives a browser an identity to send back.
+func rememberHolder(w http.ResponseWriter, r *http.Request, holder lease.Holder) {
+	http.SetCookie(w, &http.Cookie{
+		Name:  holderCookie,
+		Value: string(holder),
+		// Site-wide, because the identity is the BROWSER rather than one CV:
+		// somebody with two CVs open is one editor of each, not two of one.
+		Path: "/",
+		// Unreadable by script. It is set here and sent by the browser, and no
+		// code in the page ever touches it — so an injected script cannot read
+		// it, and cannot claim to be somebody else's window.
+		HttpOnly: true,
+		// Never sent from another site, so nothing can make a browser act as
+		// this editor from somewhere else.
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		// A session cookie: it lasts as long as the browser is open, which is
+		// as long as an editing session can possibly last. A dated one would
+		// outlive every lease it could ever name.
+	})
 }
 
 // leaseRoutes are the two the editor calls.
 func (s *Server) leaseRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/p/{slug}/lease", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		key := leaseKey(p.Slug, lang(r))
-		holder := holderOf(r)
+		// Minting here rather than in holderOf: asking for a lease is the one
+		// request that may create an identity.
+		holder := s.editorOf(w, r)
 
 		// A beacon can only POST, so a release arrives here rather than as a
 		// DELETE. Handled before anything else, because it is the one request
-		// that must work while a page is being torn down.
+		// that must work while a page is being torn down — and it carries the
+		// identity by itself, being a same-origin request with a cookie.
 		if r.URL.Query().Get("release") == "1" {
 			s.Leases.Release(key, holder)
 			sendJSON(w, map[string]any{"ok": true})
@@ -66,28 +176,25 @@ func (s *Server) leaseRoutes(mux *http.ServeMux) {
 		}
 
 		var grant lease.Grant
-		switch {
-		case holder == "":
-			// A fresh editor with no identity yet. Minted here so that a client
-			// cannot choose its own — one that did could name itself whatever
-			// the current holder is called and take the lease.
-			grant = s.Leases.Acquire(key, lease.NewHolder(), nameOf(p))
-		case r.URL.Query().Get("renew") == "1":
+		if r.URL.Query().Get("renew") == "1" {
 			// A heartbeat, which may extend a lease but never create one. That
 			// is what makes the inactivity timeout mean anything: a tab left
 			// open says hello for ever and works never, and only Acquire
 			// resets the idle clock.
 			grant = s.Leases.Renew(key, holder)
-		default:
+		} else {
 			grant = s.Leases.Acquire(key, holder, nameOf(p))
 		}
 
 		answer := map[string]any{
-			"ok":     true,
-			"held":   grant.OK,
-			"editor": string(grant.Holder),
+			"ok":   true,
+			"held": grant.OK,
 			// How long an editor may stay silent, so it can choose its own
 			// heartbeat rather than having one hard-coded on both sides.
+			//
+			// The identity is NOT reported: it is a cookie the browser keeps
+			// and no script can read, and echoing it into a response body would
+			// undo exactly that.
 			"heartbeatMs": lease.DefaultHeartbeat.Milliseconds(),
 		}
 		if grant.OK {
