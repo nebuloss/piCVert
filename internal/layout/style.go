@@ -130,6 +130,12 @@ type Stop struct {
 	Colour string
 }
 
+// Shadow is a soft drop shadow: an offset, a blur, and a colour.
+type Shadow struct {
+	X, Y, Blur float64
+	Colour     string
+}
+
 // Style is everything a theme may say about a node.
 //
 // One flat struct rather than a hierarchy: every field has a defined meaning
@@ -168,6 +174,17 @@ type Style struct {
 		Width  float64
 		Colour string
 	}
+	// Shadow is ornament: a soft drop shadow under a box.
+	//
+	// THE ONE PROPERTY A RENDERER MAY IGNORE, and it is here because the design
+	// it reproduces already worked that way — the original drew the portrait's
+	// glow on screen and left it out of the PDF, which is the correct call. A
+	// shadow is ink around a shape, not part of it: it changes no size and no
+	// position, so a renderer that cannot draw one loses nothing but the
+	// ornament. Every other property in this vocabulary must mean the same
+	// thing to both, or the two renderings could differ in layout.
+	Shadow *Shadow
+
 	// Clip hides what overflows this node — what makes `.page` cut rather than
 	// grow, which is the constraint the whole engine exists to enforce.
 	Clip bool
@@ -184,11 +201,11 @@ type Style struct {
 	Uppercase  bool
 }
 
-// LineHeightOr is the line height, or the default when the theme says nothing.
+// LineHeightOr is the line height a style names, or a plain default.
 //
-// A method rather than a bare field read, because "zero means 1.2" is a rule
-// about this type and belongs to it — every caller that re-derived it would be
-// a chance to derive it differently.
+// Used only where no font is at hand. The real answer comes from the font
+// itself — see LineMetrics.Height — because `normal` is a property of a
+// typeface and not a number one picks.
 func (s Style) LineHeightOr() float64 {
 	if s.LineHeight > 0 {
 		return s.LineHeight

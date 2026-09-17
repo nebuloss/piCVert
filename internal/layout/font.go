@@ -220,6 +220,15 @@ type LineMetrics struct {
 	// Ascent and Descent from the font, in pixels at this size. Used to place a
 	// baseline; the emitters need it to draw text where it was measured.
 	Ascent, Descent float64
+	// Height is what the font itself recommends between two baselines — what a
+	// browser means by `line-height: normal`.
+	//
+	// It is a property OF THE FONT, not a constant: Roboto asks for 1.172 em,
+	// another face asks for something else. Assuming a round 1.2 made every
+	// line a little taller than the browser draws it, and the error compounded
+	// down a column — the header chip came out 3.4px low, and a block further
+	// down proportionally more.
+	Height float64
 }
 
 // Metrics reads a face's vertical metrics at a size.
@@ -228,15 +237,16 @@ func (f *Fonts) Metrics(family string, size float64, weight Weight, italic bool)
 	defer f.mu.Unlock()
 	fc := f.face(family, weight, italic)
 	if fc == nil {
-		return LineMetrics{Ascent: size * 0.8, Descent: size * 0.2}
+		return LineMetrics{Ascent: size * 0.8, Descent: size * 0.2, Height: size * 1.2}
 	}
 	m, err := fc.font.Metrics(&f.buffer, fc.ppem(), 0)
 	if err != nil {
-		return LineMetrics{Ascent: size * 0.8, Descent: size * 0.2}
+		return LineMetrics{Ascent: size * 0.8, Descent: size * 0.2, Height: size * 1.2}
 	}
 	return LineMetrics{
 		Ascent:  fc.scale(m.Ascent) * size,
 		Descent: fc.scale(m.Descent) * size,
+		Height:  fc.scale(m.Height) * size,
 	}
 }
 

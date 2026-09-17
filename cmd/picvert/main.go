@@ -298,7 +298,12 @@ func inline(doc document.Doc, profileDir string) (document.Doc, error) {
 		for i, raw := range parts {
 			part, _ := raw.(map[string]any)
 			if i > 0 {
-				b.WriteString(" \u00b7 ")
+				// Space, NO-BREAK SPACE, middle dot, NO-BREAK SPACE, space.
+				// The non-breaking pair is what keeps the separator attached to
+				// the words on either side, so a subtitle never wraps onto a
+				// line beginning with a lone dot. The outer spaces are what make
+				// it read as a separator rather than as punctuation.
+				b.WriteString(" \u00a0\u00b7\u00a0 ")
 			}
 			text := document.Str(part, "text")
 			if strong, _ := part["strong"].(bool); strong {

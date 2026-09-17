@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -64,8 +65,9 @@ func TestEachLineHasItsOwnBox(t *testing.T) {
 		t.Error("lines are still placed by transform; their boxes will not match their ink")
 	}
 	// The second line sits one line-height down, not at the top with the first.
-	if !strings.Contains(html, "top:14px") {
-		t.Errorf("the second line is not at its own top:\n%s", html)
+	second := fmt.Sprintf("top:%spx", num(text.LineHeight))
+	if !strings.Contains(html, second) {
+		t.Errorf("the second line is not at its own top (%s):\n%s", second, html)
 	}
 }
 
@@ -169,8 +171,12 @@ func TestTextSitsInsideItsPadding(t *testing.T) {
 
 	// And the box is tall enough to hold the line plus both paddings, or the
 	// text would be centred in a box too small for it.
+	//
+	// Against the line height the ENGINE settled, not a number written here: it
+	// comes from the font, and a test that hardcoded one would fail the day a
+	// theme changed typeface, for no fault of the code.
 	text := root.Children[0]
-	want := 8.8*text.Style.LineHeightOr() + 6
+	want := text.LineHeight + 6
 	if diff := text.Height - want; diff > 0.01 || diff < -0.01 {
 		t.Errorf("chip height %.2f, want %.2f (one line plus 3px above and below)",
 			text.Height, want)

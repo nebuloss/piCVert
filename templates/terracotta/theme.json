@@ -1,22 +1,22 @@
 {
   "tokens": {
-    "primary": "#A44A2A",
+    "primary": "#0B57D0",
     "onPrimary": "#FFFFFF",
-    "primaryContainer": "#F7DDD0",
-    "onPrimaryContainer": "#3B1709",
-    "secondaryContainer": "#EFE1D8",
-    "onSecondary": "#4A3328",
-    "tertiaryContainer": "#E4DCC8",
-    "onTertiary": "#3E3720",
-    "surface": "#FBF7F4",
+    "primaryContainer": "#D3E3FD",
+    "onPrimaryContainer": "#04264E",
+    "secondaryContainer": "#DBE2F0",
+    "onSecondary": "#2A3B52",
+    "tertiaryContainer": "#C7ECD8",
+    "onTertiary": "#0B4228",
+    "surface": "#F5F8FE",
     "card": "#FFFFFF",
-    "cardAlt": "#F5EDE7",
-    "onSurface": "#231A16",
-    "onSurfaceVar": "#54453E",
-    "outline": "#E0D2C9",
-    "headerFrom": "#E8BFA6",
-    "headerMid": "#DCA98C",
-    "headerTo": "#B07B57"
+    "cardAlt": "#EEF2FA",
+    "onSurface": "#1A1C1F",
+    "onSurfaceVar": "#474B52",
+    "outline": "#D5DBE6",
+    "headerFrom": "#F3D9C9",
+    "headerMid": "#E2AE8C",
+    "headerTo": "#C4764B"
   },
   "styles": {
     "page": {
@@ -57,7 +57,10 @@
       "display": "image",
       "width": 158,
       "height": 158,
-      "radius": 79
+      "radius": 79,
+      "background": "#FFFFFF",
+      "border": "4 #FFFFFF",
+      "shadow": "0 5 16 rgba(11,87,208,.30)"
     },
     "headText": {
       "gap": 7
@@ -67,7 +70,8 @@
       "size": 32,
       "weight": 500,
       "colour": "#0A1B33",
-      "letter": -0.5
+      "letter": -0.5,
+      "lineHeight": 1
     },
     "titleChip": {
       "display": "text",

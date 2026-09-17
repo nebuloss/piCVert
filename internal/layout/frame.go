@@ -16,6 +16,9 @@ type Frame struct {
 	// each measured from the frame's top.
 	Lines     []Line
 	Baselines []float64
+	// LineHeight is the distance between two baselines, settled here so the
+	// painters cannot each arrive at a different one.
+	LineHeight float64
 
 	Children []*Frame
 }

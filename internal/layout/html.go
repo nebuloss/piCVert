@@ -101,6 +101,10 @@ func (p *HTMLPainter) frame(f *Frame) string {
 	if bg := cssBackground(s.Background); bg != "" {
 		fmt.Fprintf(&style, ";background:%s", bg)
 	}
+	if sh := s.Shadow; sh != nil {
+		fmt.Fprintf(&style, ";box-shadow:%spx %spx %spx %s",
+			num(sh.X), num(sh.Y), num(sh.Blur), sh.Colour)
+	}
 	return style.String()
 }
 
@@ -228,7 +232,9 @@ func (p *HTMLPainter) Text(f *Frame) {
 	left := s.Padding.Left + s.Border.Width
 	top := s.Padding.Top + s.Border.Width
 
-	lh := s.Size * s.LineHeightOr()
+	// The height the ENGINE settled, not one recomputed here: two places
+	// deriving it is two places to derive it differently.
+	lh := f.LineHeight
 	for i, line := range f.Lines {
 		fmt.Fprintf(&p.b,
 			`<div style="position:absolute;left:%spx;top:%spx;width:%spx;height:%spx;`+

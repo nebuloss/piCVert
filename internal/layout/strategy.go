@@ -116,7 +116,13 @@ func (textLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 	}
 
 	m := e.Fonts.Metrics(s.Family, s.Size, s.Weight, s.Italic)
-	lh := s.Size * s.LineHeightOr()
+	// A theme that names a line height gets it; one that says nothing gets what
+	// the FONT asks for, which is what a browser means by `normal`.
+	lh := m.Height
+	if s.LineHeight > 0 {
+		lh = s.Size * s.LineHeight
+	}
+	f.LineHeight = lh
 	// The baseline sits where the extra leading is split evenly above and below
 	// the text, which is what CSS does with a line box — and therefore what the
 	// HTML painter has to be able to reproduce without knowing any of this.

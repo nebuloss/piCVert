@@ -99,6 +99,7 @@ type RawStyle struct {
 	Background any     `json:"background,omitempty"` // "$token" | "#rrggbb" | gradient object
 	Radius     float64 `json:"radius,omitempty"`
 	Border     string  `json:"border,omitempty"` // "1.5 $outline"
+	Shadow     string  `json:"shadow,omitempty"` // "0 5 16 rgba(11,87,208,.30)"
 	Clip       bool    `json:"clip,omitempty"`
 
 	Family     string  `json:"family,omitempty"`
@@ -329,6 +330,25 @@ func (t *Theme) Resolve(r RawStyle) (layout.Style, error) {
 			return s, fmt.Errorf("border: %w", err)
 		}
 		s.Border.Width, s.Border.Colour = w, c
+	}
+	if r.Shadow != "" {
+		parts := strings.Fields(r.Shadow)
+		if len(parts) != 4 {
+			return s, fmt.Errorf("shadow: expected \"<x> <y> <blur> <colour>\", got %q", r.Shadow)
+		}
+		nums := make([]float64, 3)
+		for i := 0; i < 3; i++ {
+			v, err := strconv.ParseFloat(parts[i], 64)
+			if err != nil {
+				return s, fmt.Errorf("shadow: bad length %q", parts[i])
+			}
+			nums[i] = v
+		}
+		c, err := t.colour(parts[3])
+		if err != nil {
+			return s, fmt.Errorf("shadow: %w", err)
+		}
+		s.Shadow = &layout.Shadow{X: nums[0], Y: nums[1], Blur: nums[2], Colour: c}
 	}
 	if r.Clip {
 		s.Clip = true
