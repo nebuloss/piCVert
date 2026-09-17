@@ -43,16 +43,38 @@ func (fc *face) scale(v fixed.Int26_6) float64 { return float64(v) / 64.0 / fc.u
 // So the widths come from the font file itself, the same file both emitters
 // embed, and every consumer of this package asks THIS for a width. Nothing
 // estimates.
+// # ONE PROCESS, SEVERAL PEOPLE
+//
+// This used to hold a single mutex for the whole of a measurement, and a single
+// scratch buffer shared by every caller. That was correct and it did not
+// scale: twelve concurrent layouts took twelve times one, because the second
+// waited for the first. On the editor's preview — which runs on every pause in
+// typing — that is the whole service getting slower as soon as two people use
+// it.
+//
+// sfnt's own contract is what the shape below follows: a Font's methods may be
+// called concurrently PROVIDED each goroutine has its own Buffer. So the buffer
+// is pooled per measurement rather than shared, the face table is read-mostly
+// behind an RWMutex, and each face guards its own caches — where a hit, which
+// is nearly every lookup after the first page, needs only a read lock.
 type Fonts struct {
-	mu     sync.Mutex
-	faces  map[string]*face
-	buffer sfnt.Buffer
+	mu    sync.RWMutex
+	faces map[string]*face
+	// buffers is scratch space, one per measurement in flight. Pooled rather
+	// than allocated because a layout measures a few thousand strings and the
+	// buffer exists precisely to stop each of those allocating.
+	buffers sync.Pool
 }
 
 // face is one loaded font file, with the caches that make measuring cheap.
 type face struct {
 	font *sfnt.Font
 	upem float64
+
+	// mu guards the two caches below, and nothing else. Its own lock rather
+	// than the table's: two goroutines measuring in different weights have no
+	// reason to wait for one another.
+	mu sync.RWMutex
 	// advances caches the width of a rune in font units. A CV re-measures the
 	// same few hundred characters on every keystroke of the preview.
 	advances map[rune]float64
@@ -61,7 +83,21 @@ type face struct {
 	missing map[rune]bool
 }
 
-func NewFonts() *Fonts { return &Fonts{faces: map[string]*face{}} }
+func NewFonts() *Fonts {
+	return &Fonts{
+		faces:   map[string]*face{},
+		buffers: sync.Pool{New: func() any { return new(sfnt.Buffer) }},
+	}
+}
+
+// borrow takes a scratch buffer, and returns the function that gives it back.
+func (f *Fonts) borrow() (*sfnt.Buffer, func()) {
+	buf, _ := f.buffers.Get().(*sfnt.Buffer)
+	if buf == nil {
+		buf = new(sfnt.Buffer)
+	}
+	return buf, func() { f.buffers.Put(buf) }
+}
 
 // key identifies a face the way a style asks for one.
 func key(family string, weight Weight, italic bool) string {
@@ -93,7 +129,18 @@ func (f *Fonts) Load(family string, weight Weight, italic bool, file string) err
 	return nil
 }
 
-// face finds the closest registered face.
+// faceFor is face() with the table's read lock taken.
+//
+// Separate from face() because face() calls keys(), which locks too — and a
+// sync.RWMutex is not reentrant, so a single method doing both would deadlock
+// the first time a style asked for a weight nobody shipped.
+func (f *Fonts) faceFor(family string, weight Weight, italic bool) *face {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.face(family, weight, italic)
+}
+
+// face finds the closest registered face. The caller holds the table lock.
 //
 // Falling back rather than failing: a theme asking for a weight it did not ship
 // should draw in the nearest one it did, exactly as a browser would, instead of
@@ -147,7 +194,7 @@ func (f *Fonts) face(family string, weight Weight, italic bool) *face {
 	return nil
 }
 
-// keys is every registered face, in a fixed order.
+// keys is every registered face, in a fixed order. The caller holds the lock.
 func (f *Fonts) keys() []string {
 	out := make([]string, 0, len(f.faces))
 	for k := range f.faces {
@@ -165,32 +212,54 @@ func abs(v int) int {
 }
 
 // advance is the width of one rune, in font units.
+//
+// The read lock is the point: after the first page every rune a CV uses is in
+// the cache, so this is a read-mostly map and concurrent measurements do not
+// queue behind one another.
 func (fc *face) advance(buf *sfnt.Buffer, r rune) float64 {
-	if w, ok := fc.advances[r]; ok {
+	fc.mu.RLock()
+	w, hit := fc.advances[r]
+	gone := fc.missing[r]
+	fc.mu.RUnlock()
+	if hit {
 		return w
 	}
-	if fc.missing[r] {
+	if gone {
 		return fc.fallbackAdvance(buf)
 	}
+
 	idx, err := fc.font.GlyphIndex(buf, r)
 	if err != nil || idx == 0 {
-		fc.missing[r] = true
+		fc.mark(r)
 		return fc.fallbackAdvance(buf)
 	}
 	adv, err := fc.font.GlyphAdvance(buf, idx, fc.ppem(), 0)
 	if err != nil {
-		fc.missing[r] = true
+		fc.mark(r)
 		return fc.fallbackAdvance(buf)
 	}
-	w := fc.scale(adv)
+
+	w = fc.scale(adv)
+	fc.mu.Lock()
 	fc.advances[r] = w
+	fc.mu.Unlock()
 	return w
+}
+
+// mark records a rune this face cannot draw.
+func (fc *face) mark(r rune) {
+	fc.mu.Lock()
+	fc.missing[r] = true
+	fc.mu.Unlock()
 }
 
 // fallbackAdvance is what an unmapped rune costs. The space width, because a
 // character the font cannot draw still occupies the place of one.
 func (fc *face) fallbackAdvance(buf *sfnt.Buffer) float64 {
-	if w, ok := fc.advances[' ']; ok {
+	fc.mu.RLock()
+	w, ok := fc.advances[' ']
+	fc.mu.RUnlock()
+	if ok {
 		return w
 	}
 	idx, err := fc.font.GlyphIndex(buf, ' ')
@@ -201,7 +270,9 @@ func (fc *face) fallbackAdvance(buf *sfnt.Buffer) float64 {
 	if err != nil {
 		return 0.25
 	}
+	fc.mu.Lock()
 	fc.advances[' '] = fc.scale(adv)
+	fc.mu.Unlock()
 	return fc.advances[' ']
 }
 
@@ -214,24 +285,24 @@ func (f *Fonts) Width(text string, family string, size float64, weight Weight, i
 	if text == "" {
 		return 0
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	fc := f.face(family, weight, italic)
+	fc := f.faceFor(family, weight, italic)
 	if fc == nil {
 		return 0
 	}
+	buf, release := f.borrow()
+	defer release()
 
 	var em float64
 	var prev sfnt.GlyphIndex
 	first := true
 	count := 0
 	for _, r := range text {
-		em += fc.advance(&f.buffer, r)
+		em += fc.advance(buf, r)
 		count++
-		idx, err := fc.font.GlyphIndex(&f.buffer, r)
+		idx, err := fc.font.GlyphIndex(buf, r)
 		if err == nil && idx != 0 {
 			if !first {
-				if k, err := fc.font.Kern(&f.buffer, prev, idx, fc.ppem(), 0); err == nil {
+				if k, err := fc.font.Kern(buf, prev, idx, fc.ppem(), 0); err == nil {
 					em += fc.scale(k)
 				}
 			}
@@ -262,13 +333,13 @@ type LineMetrics struct {
 
 // Metrics reads a face's vertical metrics at a size.
 func (f *Fonts) Metrics(family string, size float64, weight Weight, italic bool) LineMetrics {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	fc := f.face(family, weight, italic)
+	fc := f.faceFor(family, weight, italic)
 	if fc == nil {
 		return LineMetrics{Ascent: size * 0.8, Descent: size * 0.2, Height: size * 1.2}
 	}
-	m, err := fc.font.Metrics(&f.buffer, fc.ppem(), 0)
+	buf, release := f.borrow()
+	defer release()
+	m, err := fc.font.Metrics(buf, fc.ppem(), 0)
 	if err != nil {
 		return LineMetrics{Ascent: size * 0.8, Descent: size * 0.2, Height: size * 1.2}
 	}
@@ -281,8 +352,8 @@ func (f *Fonts) Metrics(family string, size float64, weight Weight, italic bool)
 
 // Has reports whether any face of a family is loaded.
 func (f *Fonts) Has(family string) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	for k := range f.faces {
 		if strings.HasPrefix(k, family+"|") {
 			return true

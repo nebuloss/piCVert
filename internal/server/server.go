@@ -33,8 +33,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
-	"time"
 
 	"picvert/internal/access"
 	"picvert/internal/document"
@@ -63,21 +61,8 @@ type Server struct {
 	Guard    *security.Guard
 	Registry *templates.Registry
 
-	// pages caches rendered CVs, keyed by document and template.
-	//
-	// The editor asks for a fresh page on every pause in typing, and the viewer
-	// asks for the same page on every reload. A layout costs a few milliseconds
-	// and nothing about a document changes between two requests that did not go
-	// through the store, so the answer is kept until the document does change.
-	mu    sync.Mutex
-	pages map[string]*cached
-}
-
-type cached struct {
-	stamp time.Time
-	html  string
-	pdf   []byte
-	page  *engine.Page
+	// pages caches rendered CVs. See cache.go for what bounds it and why.
+	pages *pageCache
 }
 
 // New assembles the service.
@@ -94,7 +79,7 @@ func New(home string) (*Server, error) {
 		Access:   access.New(),
 		Guard:    security.New(),
 		Registry: e.Registry,
-		pages:    map[string]*cached{},
+		pages:    newPageCache(),
 	}, nil
 }
 
@@ -109,12 +94,9 @@ func (s *Server) render(p *profiles.Profile, lang string) (*cached, error) {
 		return nil, fmt.Errorf("unknown CV: %q", p.Slug)
 	}
 	key := file
-	s.mu.Lock()
-	if hit := s.pages[key]; hit != nil && hit.stamp.Equal(info.ModTime()) {
-		s.mu.Unlock()
+	if hit, ok := s.pages.get(key, info.ModTime()); ok {
 		return hit, nil
 	}
-	s.mu.Unlock()
 
 	doc, err := engine.ReadDoc(file)
 	if err != nil {
@@ -129,16 +111,7 @@ func (s *Server) render(p *profiles.Profile, lang string) (*cached, error) {
 		return nil, err
 	}
 	entry := &cached{stamp: info.ModTime(), html: html, page: page}
-
-	s.mu.Lock()
-	// A cache with no bound is a memory leak with a schedule. A service holding
-	// a handful of CVs never reaches this; one holding thousands starts over
-	// rather than grows, which costs a re-layout and never an outage.
-	if len(s.pages) > 256 {
-		s.pages = map[string]*cached{}
-	}
-	s.pages[key] = entry
-	s.mu.Unlock()
+	s.pages.put(key, entry)
 	return entry, nil
 }
 
@@ -148,12 +121,9 @@ func (s *Server) pdf(p *profiles.Profile, lang string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
 	if entry.pdf != nil {
-		defer s.mu.Unlock()
 		return entry.pdf, nil
 	}
-	s.mu.Unlock()
 
 	name := profiles.DocName(lang)
 	source, _ := os.ReadFile(filepath.Join(p.Dir, name))
@@ -161,9 +131,9 @@ func (s *Server) pdf(p *profiles.Profile, lang string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
 	entry.pdf = data
-	s.mu.Unlock()
+	// The entry was weighed without its PDF, which is about 300 kB of it.
+	s.pages.grew(entry, len(data))
 	return data, nil
 }
 
