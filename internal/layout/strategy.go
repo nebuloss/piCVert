@@ -262,13 +262,17 @@ func (r rowLayout) fill(e *Engine, n *Node, b box, avail Space) [][]seat {
 		// A child that neither fixes its width nor grows takes the width of its
 		// content, as flexbox does; only a growing child claims the remainder.
 		if child.Style.Width == 0 && child.Style.Grow == 0 {
+			// NOT re-measured. A text frame already shrank to the lines it
+			// broke, and its width is the OUTER one — content plus padding.
+			// Handing that back as the space AVAILABLE gave the second pass
+			// sixteen pixels less room than the first, so a chip that fitted on
+			// one line broke onto two, by exactly its own horizontal padding.
+			// It showed on the short chips, where sixteen pixels is a quarter
+			// of the chip.
+			//
+			// Only containers need asking, and only because their width is a
+			// fact about their children rather than about themselves.
 			cf.Width = natural(cf)
-			// Re-measured at its own width, because a text node measured into a
-			// wide row broke its lines for that width. Shrinking the box
-			// without re-breaking would leave lines that no longer match it.
-			if cf.Width < b.inner {
-				cf = e.Measure(child, Space{Width: cf.Width, Height: avail.Height})
-			}
 		} else if child.Style.Grow > 0 {
 			// A growing child contributes NOTHING to the width already taken:
 			// what it gets is whatever the others leave, worked out in share()

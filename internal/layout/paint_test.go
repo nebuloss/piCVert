@@ -200,3 +200,41 @@ func TestUnsetWeightIsWrittenAsRegular(t *testing.T) {
 		t.Errorf("expected the default weight to be written out:\n%s", html)
 	}
 }
+
+// A box that shrinks to its text must not then re-break that text.
+//
+// A text frame's width is the OUTER one: content plus padding. Handing it back
+// as the space AVAILABLE for a second pass gives that pass less room than the
+// first had, by exactly the padding — so a chip that fitted on one line breaks
+// onto two. It showed on short chips, where 16px of padding is a quarter of the
+// chip, and read as text splitting for no reason.
+func TestShrinkingDoesNotRebreakTheText(t *testing.T) {
+	f := loadTestFonts(t)
+	e := NewEngine(f)
+
+	chip := func(text string) *Node {
+		return Para(Style{
+			Family: "Roboto", Size: 8.8, Weight: Regular,
+			Padding: XY(3, 8), Radius: 999,
+		}, text)
+	}
+	// A row wide enough for either chip on its own line.
+	row := Box(Style{Display: RowWrap, Width: 400, Gap: 4},
+		chip("Développement OS"), chip("Assembleur x86"))
+	page := Box(Style{Display: Block, Width: 400, Height: 200}, row)
+
+	root := e.Layout(page, 400, 200)
+
+	for _, got := range root.Children[0].Children {
+		if len(got.Lines) != 1 {
+			t.Errorf("%q broke onto %d lines inside a 400px row",
+				got.Lines[0].Text(), len(got.Lines))
+		}
+		// And the box is wide enough for the line it holds, plus its padding.
+		want := got.Lines[0].Width + 16
+		if diff := got.Width - want; diff > 0.01 || diff < -0.01 {
+			t.Errorf("box %.1fpx wide for a %.1fpx line plus 16px padding",
+				got.Width, got.Lines[0].Width)
+		}
+	}
+}
