@@ -24,7 +24,9 @@ GOOS=… go build            six targets, all of them
 | A save | 496 µs; a full layout is 420× that, and a keystroke pays the former |
 | Concurrency | 12 layouts at once take 3.1× one, not 12× |
 | Memory | 40 CVs rendered to page and PDF: +18 MB, cache bounded at 48 MB |
-| Two editors | a stale save is refused rather than silently overwriting |
+| Two editors | one holds a lease, the other is told; a stale save is refused |
+| The lease | expires on silence and on inactivity, verified against a fake clock |
+| Two real windows | driven over the debugging protocol: one edits, one is told, an ignored notice resolves itself |
 | The service | driven over HTTP by `internal/server`: publication rule, link scope, read-only links, validation, unknown properties, preview, journal, trash, link rotation |
 
 The machine this was written on has neither `go` nor `node`; everything is
@@ -58,12 +60,11 @@ verified on a build host over SSH.
 but nothing yet reads it back out, and there is no bundle format for a CV plus
 its portrait.
 
-**Collaborative editing.** Two people with the same edit link do not see each
-other's changes, and there is no lock. The second save is refused rather than
-applied, and the person is asked whether to reload or overwrite — so no work is
-destroyed silently, but two people cannot usefully edit one CV at once. The
-comparison is per document, not per field, so unrelated sections collide too.
-`internal/server/sharing_test.go` records the behaviour, limitations included.
+**Simultaneous editing.** One person edits at a time, by lease; the second is
+told when they open it and offered the viewer. That is deliberate rather than
+pending — a CV has one author, and a merge would cost far more than it is
+worth here. What is genuinely absent is any way for the two to see each other's
+changes: the waiting one polls, and nothing is pushed.
 
 **Anything self-service.** A CV is created from the admin port or the command
 line. A public creation route needs a quota, a per-address limit and a

@@ -33,6 +33,11 @@ export interface Tagged<T> {
   revision: string;
 }
 
+/** Somebody else holds the editing lease. */
+export function isLocked(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 423;
+}
+
 /**
  * A conflict is its own thing, not a bad request.
  *
@@ -70,13 +75,13 @@ export class HttpClient {
    * site to buy nothing.
    */
   async tagged<T>(
-    method: string, path: string, body?: unknown, revision?: string,
+    method: string, path: string, body?: unknown, revision?: string, holder?: string,
   ): Promise<Tagged<T>> {
-    return this.exchange<T>(method, path, { body, revision });
+    return this.exchange<T>(method, path, { body, revision, holder });
   }
 
-  post<T>(path: string, body?: unknown, type?: string): Promise<T> {
-    return this.send<T>('POST', path, body, type);
+  post<T>(path: string, body?: unknown, type?: string, holder?: string): Promise<T> {
+    return this.send<T>('POST', path, body, type, holder);
   }
 
   put<T>(path: string, body?: unknown): Promise<T> {
@@ -101,21 +106,28 @@ export class HttpClient {
    * every reader — which is the failure that is otherwise invisible.
    */
   /** send is the common case: the body, and nothing about the response. */
-  private async send<T>(method: string, path: string, body?: unknown, type?: string): Promise<T> {
-    return (await this.exchange<T>(method, path, { body, type })).body;
+  private async send<T>(
+    method: string, path: string, body?: unknown, type?: string, holder?: string,
+  ): Promise<T> {
+    return (await this.exchange<T>(method, path, { body, type, holder })).body;
   }
 
   /** What a request may carry beyond its path. */
   private async exchange<T>(
     method: string,
     path: string,
-    { body, type, revision }: { body?: unknown; type?: string; revision?: string },
+    { body, type, revision, holder }:
+      { body?: unknown; type?: string; revision?: string; holder?: string },
   ): Promise<Tagged<T>> {
     const headers: Record<string, string> = {};
     if (this.token) headers['X-CV-Token'] = this.token;
     // The revision this client believes it is editing. The server refuses the
     // write if the document has moved since — see store.WriteIfUnchanged.
     if (revision) headers['If-Match'] = `"${revision}"`;
+    // Which editing window this is. The server refuses a write from a window
+    // that no longer holds the lease — without it the lease would be a
+    // courtesy the interface observes and nothing else does.
+    if (holder) headers['X-CV-Editor'] = holder;
 
     let payload: BodyInit | undefined;
     if (body !== undefined) {

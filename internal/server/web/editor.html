@@ -28,6 +28,14 @@
   </section>
 </main>
 
+<!-- Shown when somebody else is editing, and when this window loses the right
+     to. Its own dialog rather than the history one: they can both be relevant,
+     and a dialog that means two things is a dialog that shows the wrong one. -->
+<dialog id="busy">
+  <h2>This CV is open somewhere else</h2>
+  <div id="busy-body"></div>
+</dialog>
+
 <dialog id="history">
   <h2>History</h2>
   <div id="history-body"></div>

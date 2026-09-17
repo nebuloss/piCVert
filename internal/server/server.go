@@ -38,6 +38,7 @@ import (
 	"picvert/internal/document"
 	"picvert/internal/engine"
 	"picvert/internal/favicon"
+	"picvert/internal/lease"
 	"picvert/internal/profiles"
 	"picvert/internal/security"
 	"picvert/internal/store"
@@ -60,6 +61,8 @@ type Server struct {
 	Access   *access.Policy
 	Guard    *security.Guard
 	Registry *templates.Registry
+	// Leases grant one editor at a time. See lease.go.
+	Leases *lease.Registry
 
 	// pages caches rendered CVs. See cache.go for what bounds it and why.
 	pages *pageCache
@@ -79,6 +82,7 @@ func New(home string) (*Server, error) {
 		Access:   access.New(),
 		Guard:    security.New(),
 		Registry: e.Registry,
+		Leases:   lease.New(),
 		pages:    newPageCache(),
 	}, nil
 }

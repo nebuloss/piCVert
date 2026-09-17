@@ -112,42 +112,54 @@ the address bar cannot be used to find out whose CVs are here.
 
 ## Two people editing one CV
 
-A link is the only credential here, so sharing one is how a CV comes to have two
-editors — and a forgotten tab on another machine counts as the second. What
-happens is worth knowing exactly, because two thirds of it is a limitation.
+**One person edits at a time.** The second is told when they open it, before
+they have typed anything — rather than discovering it when their afternoon's
+work is refused.
 
-**Nobody is locked out.** Both people can open the CV and both can type. Nothing
-marks a field, a section or the document as taken, and nothing records that
-anyone is editing.
+They are offered two things and given a third if they ignore both:
 
-**Neither sees the other's changes arrive.** There is no channel from the server
-to an open editor — no polling, no events, no socket. Each shows the document it
-loaded plus what its own user has typed, until it is reloaded.
+> **“Jean Dupont” is being edited** in another window.
+> [Wait for it] [Just view it] — *taking you to view it in 10 seconds…*
 
-**The second save is refused, not applied.** Every save says which version it was
-built from; one built on a version that has since moved is rejected, and the
-editor asks the person what they want:
+Any click or keypress stops the countdown, so nobody is navigated away mid
+thought. Waiting polls until it is free and then opens the editor. Most people
+opening a CV wanted to look at it, which is why that is where an undecided
+person ends up.
 
-> Someone else has changed this CV since you opened it.
-> **OK** — reload theirs, and lose what you have typed here.
-> **Cancel** — keep yours, and overwrite theirs.
+### It cannot be held for ever
 
-Saving stops until that is answered, so nothing is decided by default.
+The holder is a browser tab, and a tab can be closed, crash, lose its network
+or go into a bag with the laptop. So the right to edit is a **lease** that
+expires, with two timeouts because there are two different failures:
 
-So the guarantee is narrow and worth stating precisely: **no change is destroyed
-without somebody being told.** It is not collaborative editing. Two people
-working on a CV at the same time will interrupt each other, and one of them will
-lose work — deliberately, having been asked, rather than silently.
+| | | |
+|---|---|---|
+| **45 s** | the window stopped talking | closed, crashed, disconnected |
+| **15 min** | the window is there and nothing has changed | a tab left open on a second monitor |
 
-The comparison is per **document**, not per field: the editor sends the whole CV
-and the version covers all of it, so two people editing unrelated sections
-collide exactly as two people editing one line do. `internal/server/sharing_test.go`
-records all of this, including that last part, so that a future merge has a test
-to contradict.
+One timeout cannot do both: short enough to free a closed tab quickly is far
+too short for somebody thinking about a sentence.
 
-**In practice this rarely bites**, because a CV has one author. It is worth
-knowing before handing an edit link to two people and expecting them to work on
-it together — for that, send one of them the read link.
+The editor says "I am still here" every 15 seconds, so two of those can be lost
+to a bad connection before anybody is treated as gone. Saying hello does **not**
+hold off the second timeout — only actually changing the CV does, which is what
+tells a person apart from a forgotten tab. A tab that closes gives the lease up
+at once, so the next person rarely waits the full 45 seconds.
+
+Leases live in memory and are lost on restart. That is correct: a restart is
+the moment every holder has gone, and honouring leases belonging to nobody is
+the one thing a fresh process must not do.
+
+### And if a lease lapses mid-sentence
+
+The save is still refused rather than applied. Every save says which version of
+the document it was built from, and one built on a version that has since moved
+is rejected — so the older guarantee still stands underneath: **no change is
+destroyed without somebody being told.** The lease is what stops that happening
+in the first place.
+
+The command line and anyone with `curl` take no lease and are not refused one;
+they are covered by the version check.
 
 ## Backups
 

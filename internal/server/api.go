@@ -210,7 +210,10 @@ func (s *Server) api() http.Handler {
 		s.sendPhoto(w, r, p)
 	}))
 
-	mux.HandleFunc("POST /api/p/{slug}/photo", s.owned(s.uploadPhoto))
+	mux.HandleFunc("POST /api/p/{slug}/photo", s.owned(s.requireLease(s.uploadPhoto)))
+
+	// Asking for, keeping and giving up the right to edit.
+	s.leaseRoutes(mux)
 
 	mux.HandleFunc("GET /api/p/{slug}/links", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		links, err := s.Tokens.ForProfile(p.Slug)
@@ -274,7 +277,10 @@ func (s *Server) owned(h func(http.ResponseWriter, *http.Request, *profiles.Prof
 
 // write is a handler taking a whole document.
 func (s *Server) write(apply func(*http.Request, *profiles.Profile, any) (document.Doc, error)) http.HandlerFunc {
-	return s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	// requireLease wraps every mutating route, here rather than per route: a
+	// check written out seven times is a check that will be missing from the
+	// eighth.
+	return s.owned(s.requireLease(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		var body any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			fail(w, http.StatusBadRequest, err)
@@ -286,7 +292,7 @@ func (s *Server) write(apply func(*http.Request, *profiles.Profile, any) (docume
 			return
 		}
 		s.saved(w, p, r, doc)
-	})
+	}))
 }
 
 // statusFor distinguishes “what you sent is wrong” from “what you sent was
@@ -305,7 +311,7 @@ func statusFor(err error) int {
 
 // patch is a handler taking a partial change.
 func (s *Server) patch(apply func(*http.Request, *profiles.Profile, map[string]any) (document.Doc, error)) http.HandlerFunc {
-	return s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	return s.owned(s.requireLease(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		patch := map[string]any{}
 		if err := json.NewDecoder(r.Body).Decode(&patch); err != nil && err != io.EOF {
 			fail(w, http.StatusBadRequest, err)
@@ -317,7 +323,7 @@ func (s *Server) patch(apply func(*http.Request, *profiles.Profile, map[string]a
 			return
 		}
 		s.saved(w, p, r, doc)
-	})
+	}))
 }
 
 // saved is the answer to every write: the stored document, and the revision it

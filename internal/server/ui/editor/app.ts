@@ -26,6 +26,8 @@ import type { SaveState } from './autosave.ts';
 import { Form } from './form.ts';
 import { FitReport, Preview } from './preview.ts';
 import { HistoryPanel, LanguageBar } from './panels.ts';
+import { Lease } from './lease.ts';
+import { BusyNotice } from './busy.ts';
 
 class Editor {
   private readonly api: Api;
@@ -48,6 +50,8 @@ class Editor {
   private view?: Form;
   private preview?: Preview;
   private autosave?: Autosave;
+  private lease?: Lease;
+  private readonly busy: BusyNotice;
 
   constructor(root: Document) {
     this.form = need(root, '#form');
@@ -67,6 +71,11 @@ class Editor {
     );
     need<HTMLButtonElement>(root, '#history-open')
       .addEventListener('click', () => void this.historyPanel.open());
+
+    this.busy = new BusyNotice(
+      need<HTMLDialogElement>(root, '#busy'), need(root, '#busy-body'),
+      `${base}/`,
+    );
 
     this.languages = new LanguageBar(
       need<HTMLSelectElement>(root, '#lang'),
@@ -95,7 +104,60 @@ class Editor {
       // cosmetic failure.
       this.templates = [];
     }
+    if (!(await this.claim())) return;
     await this.open(this.lang);
+  }
+
+  /**
+   * claim takes the editing lease, or offers the alternatives.
+   *
+   * BEFORE the document is loaded and the form drawn. Somebody who cannot save
+   * should not be shown an editor at all — every keystroke in it would be work
+   * they are going to lose, and an interface that lets people do that is worse
+   * than one that says no.
+   */
+  private async claim(): Promise<boolean> {
+    this.lease?.release();
+    this.lease = new Lease(this.api, this.lang);
+    this.lease.on('lost', () => this.lostTheLease());
+
+    let state;
+    try {
+      state = await this.lease.ask();
+    } catch (error) {
+      this.fail(error);
+      return false;
+    }
+    this.api.editor = this.lease.holder;
+    if (state.held) return true;
+
+    // Somebody else has it. The notice offers waiting or just looking, and
+    // takes an undecided person to the viewer — which is where most people
+    // opening a CV were going anyway.
+    this.busy.show(state, () => {
+      void this.lease?.waitForIt((next) => {
+        this.busy.progress(next);
+        if (next.held) {
+          this.api.editor = this.lease?.holder ?? '';
+          this.busy.close();
+          void this.open(this.lang);
+        }
+      });
+    });
+    return false;
+  }
+
+  /**
+   * lostTheLease is this window being told to stop.
+   *
+   * The autosave is released rather than merely paused: whatever is on screen
+   * can no longer be written, and a queue that kept trying would spend the rest
+   * of the session collecting refusals.
+   */
+  private lostTheLease(): void {
+    this.autosave?.release();
+    this.say('conflict', 'someone else is editing');
+    this.busy.lost();
   }
 
   /**
@@ -269,6 +331,9 @@ class Editor {
     this.autosave = new Autosave(
       this.doc, (doc) => this.api.save(doc, this.lang, this.revision),
     ).guard();
+    // The lease goes back the moment the tab does, so the next person is not
+    // waiting on a timeout for a window nobody is looking at.
+    window.addEventListener('pagehide', () => this.lease?.release());
     this.autosave.on('state', ({ kind, text }) => this.say(kind, text));
     this.autosave.on('conflict', () => this.resolveConflict());
     this.autosave.on('saved', ({ body, revision }) => {
@@ -286,6 +351,10 @@ class Editor {
 
   private deleted(answer: DeleteAnswer): void {
     this.autosave?.release();
+    // The CV is gone, so holding the right to edit it is holding nothing —
+    // and the next person to open the link should not wait a timeout to be
+    // told it no longer exists.
+    this.lease?.release();
     this.scaler.stop();
     Form.gone(document.body, answer.grace);
   }

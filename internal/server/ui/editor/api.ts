@@ -13,6 +13,7 @@
 
 import { HttpClient } from '../lib/http.ts';
 import type { Tagged } from '../lib/http.ts';
+import type { LeaseState } from './lease.ts';
 import type {
   Cv, DeleteAnswer, LanguagesAnswer, LinksAnswer, LoadAnswer,
   PreviewAnswer, SaveAnswer, TemplatesAnswer, HistoryAnswer,
@@ -27,13 +28,18 @@ export interface ApiOptions {
 export class Api {
   readonly slug: string;
   readonly base: string;
+  private readonly token: string;
   private readonly http: HttpClient;
 
   constructor({ slug, token, base }: ApiOptions) {
     this.slug = slug;
     this.base = base;
+    this.token = token;
     this.http = new HttpClient(token);
   }
+
+  /** editor is the identity of this window, once the server has minted one. */
+  editor = '';
 
   /** The language is a query parameter on nearly everything, so it is built once. */
   #q(lang: string): string {
@@ -64,7 +70,7 @@ export class Api {
    * pause rather than on a letter.
    */
   save(doc: Cv, lang: string, revision: string): Promise<Tagged<SaveAnswer>> {
-    return this.http.tagged<SaveAnswer>('PUT', this.#p('', lang), doc, revision);
+    return this.http.tagged<SaveAnswer>('PUT', this.#p('', lang), doc, revision, this.editor);
   }
 
   /**
@@ -116,6 +122,32 @@ export class Api {
 
   photo(file: File, lang: string): Promise<SaveAnswer> {
     return this.http.post<SaveAnswer>(this.#p('/photo', lang), file, file.type);
+  }
+
+  /**
+   * lease asks to edit, or says this window is still here.
+   *
+   * The holder identity goes in a header rather than the body because the
+   * heartbeat has no body, and because every request that writes carries it
+   * too — one place for it beats two.
+   */
+  async lease(lang: string, holder: string, renew: boolean): Promise<LeaseState> {
+    const path = this.#p('/lease', lang) + (lang ? '&' : '?') + `renew=${renew ? '1' : '0'}`;
+    return this.http.post<LeaseState>(path, undefined, undefined, holder);
+  }
+
+  /**
+   * releaseLease gives it up as the tab closes.
+   *
+   * A beacon, because a browser may cancel an ordinary request when the page
+   * goes away — and this one is sent at exactly that moment. Nothing depends
+   * on it: the lease lapses by itself in under a minute. It is the difference
+   * between the next person waiting a moment and waiting the timeout.
+   */
+  releaseLease(lang: string, holder: string): void {
+    const path = this.#p('/lease', lang) + (lang ? '&' : '?') +
+      `editor=${encodeURIComponent(holder)}&token=${encodeURIComponent(this.token)}&release=1`;
+    navigator.sendBeacon(path);
   }
 
   /** The links out of the editor, carrying whichever language is being edited. */

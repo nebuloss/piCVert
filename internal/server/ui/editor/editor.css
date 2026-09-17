@@ -148,3 +148,16 @@ dialog h2 { margin: 0 0 12px; font-size: 18px; }
   main { flex-direction: column; }
   #form { width: auto; min-width: 0; border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* --- the CV is open somewhere else --------------------------------------- */
+
+#busy p { margin: 0 0 10px; line-height: 1.55; }
+#busy .muted { color: var(--dim); font-size: 13px; }
+#busy .choices { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+#busy button.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+#busy button.primary:hover { color: #fff; opacity: .9; }
+/* No close button and no light-dismiss: the choice is the point, and a dialog
+   dismissed by a stray click would leave an editor nobody may save from. */
+#busy::backdrop { background: rgba(0,0,0,.45); }
