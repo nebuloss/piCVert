@@ -241,6 +241,12 @@ func (r rowLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 		}
 		used := r.share(e, line, s, b.inner)
 		height := r.tallest(line)
+		// The spare width `justify` spreads is measured against the room this
+		// row was GIVEN, not against what its children happened to need. A row
+		// that grows into its parent has b.inner set from that parent, and
+		// computing the gap from the content instead left a row of ornament
+		// bunched at one end with the space it was meant to spread sitting
+		// unused beside it.
 		r.place(e, f, line, s, y, height, b.inner-used)
 		widest = math.Max(widest, used)
 		y += height
@@ -338,7 +344,7 @@ func (rowLayout) share(e *Engine, line []seat, s Style, inner float64) float64 {
 	}
 	for _, st := range line {
 		if g := st.node.Style.Grow; g > 0 {
-			st.frame.Width += spare * (g / grow)
+			st.frame.Width = spare * (g / grow)
 			// Re-laid at the width it actually got. Its contents were measured
 			// against the whole row, so without this its paragraphs keep the
 			// line breaks of a column far wider than the one it ended up in.

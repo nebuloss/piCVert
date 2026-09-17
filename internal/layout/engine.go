@@ -94,13 +94,23 @@ func place(f *Frame, originX, originY float64) {
 // reflow re-lays a frame whose width or height changed after it was measured —
 // what happens to a growing child once its share of the leftover space is
 // known.
+// reflow re-lays a frame whose width or height changed after it was measured —
+// what happens to a growing child once its share of the leftover space is
+// known.
+//
+// The width is IMPOSED afterwards, not merely offered. A row measures itself to
+// its content unless something says otherwise, so a grown row re-measured at
+// its new width simply shrank back to what its children needed — and a row of
+// ornament asked to spread across the header stayed bunched at one end, with
+// the space it was meant to fill sitting empty beside it.
 func (e *Engine) reflow(f *Frame) {
 	if f.Node == nil {
 		return
 	}
 	w, h := f.Width, f.Height
-	fresh := e.Measure(f.Node, Space{Width: w, Height: h})
+	fresh := e.Measure(f.Node, Space{Width: w, Height: h, FixedHeight: h > 0})
 	fresh.X, fresh.Y = f.X, f.Y
+	fresh.Width = w
 	if f.Style.Height > 0 || h > fresh.Height {
 		fresh.Height = h
 	}

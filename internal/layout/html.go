@@ -203,11 +203,19 @@ func (p *HTMLPainter) Shape(f *Frame) {
 	if s.Opacity > 0 {
 		style += fmt.Sprintf(";opacity:%s", num(s.Opacity))
 	}
+	// A rounded polygon is a path, not a <polygon>: the corners are arcs. The
+	// viewBox keeps its own square coordinates so the shape stretches with the
+	// box, and the aspect ratio is the caller's to get right.
+	paint := fmt.Sprintf(`fill="%s"`, orElse(s.Background.Colour, "currentColor"))
+	if s.Stroke > 0 {
+		paint = fmt.Sprintf(`fill="none" stroke="%s" stroke-width="%s"`,
+			orElse(s.Background.Colour, "currentColor"), num(s.Stroke*100/math.Max(f.Width, 1)))
+	}
 	fmt.Fprintf(&p.b,
 		`<div style="%s"><svg viewBox="0 0 100 100" preserveAspectRatio="none" `+
 			`style="width:100%%;height:100%%;display:block">`+
-			`<polygon points="%s" fill="%s"/></svg></div>`,
-		style, polygonPoints(s.Sides, s.Rotate), orElse(s.Background.Colour, "currentColor"))
+			`<path d="%s" %s/></svg></div>`,
+		style, polygonPath(s.Sides, s.Rotate, s.Corner), paint)
 }
 
 // polygonPoints is a regular polygon inscribed in a 100x100 box.
@@ -224,6 +232,87 @@ func (p *HTMLPainter) Shape(f *Frame) {
 // So the points are normalised to touch the edges of the viewBox in both axes:
 // the caller gives the box the aspect ratio the shape should have (a hexagon
 // standing on a point is about 1:1.155), and the shape then fills it honestly.
+// polygonPath is the polygon as an SVG path, with rounded corners.
+//
+// Each vertex becomes a short arc between the two edges meeting there, so the
+// shape keeps its silhouette and loses its points — which is what the design
+// asks for, and what a hexagon needs in order to read as ornament rather than
+// as a warning sign.
+func polygonPath(sides int, rotate, corner float64) string {
+	pts := polygonVertices(sides, rotate)
+	if corner <= 0 {
+		var b strings.Builder
+		for i := 0; i < len(pts); i += 2 {
+			op := "L"
+			if i == 0 {
+				op = "M"
+			}
+			fmt.Fprintf(&b, "%s%s %s ", op, num(pts[i]), num(pts[i+1]))
+		}
+		b.WriteString("Z")
+		return b.String()
+	}
+
+	// The radius in viewBox units, capped so neighbouring corners cannot meet.
+	n := len(pts) / 2
+	r := math.Min(corner, 24)
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		cx, cy := pts[i*2], pts[i*2+1]
+		px, py := pts[((i-1+n)%n)*2], pts[((i-1+n)%n)*2+1]
+		nx, ny := pts[((i+1)%n)*2], pts[((i+1)%n)*2+1]
+
+		// A point on each edge, r away from the vertex.
+		ax, ay := towards(cx, cy, px, py, r)
+		bx, by := towards(cx, cy, nx, ny, r)
+		if i == 0 {
+			fmt.Fprintf(&b, "M%s %s ", num(ax), num(ay))
+		} else {
+			fmt.Fprintf(&b, "L%s %s ", num(ax), num(ay))
+		}
+		// A quadratic through the vertex rounds it without needing the arc's
+		// centre, and at this size is indistinguishable from one.
+		fmt.Fprintf(&b, "Q%s %s %s %s ", num(cx), num(cy), num(bx), num(by))
+	}
+	b.WriteString("Z")
+	return b.String()
+}
+
+// towards is the point r of the way from (x,y) to (tx,ty).
+func towards(x, y, tx, ty, r float64) (float64, float64) {
+	dx, dy := tx-x, ty-y
+	d := math.Hypot(dx, dy)
+	if d == 0 {
+		return x, y
+	}
+	f := math.Min(r/d, 0.5)
+	return x + dx*f, y + dy*f
+}
+
+// polygonVertices is the polygon's corners, normalised to fill the viewBox.
+func polygonVertices(sides int, rotate float64) []float64 {
+	if sides < 3 {
+		sides = 6
+	}
+	xs := make([]float64, sides)
+	ys := make([]float64, sides)
+	minX, maxX := math.Inf(1), math.Inf(-1)
+	minY, maxY := math.Inf(1), math.Inf(-1)
+	for i := 0; i < sides; i++ {
+		a := (float64(i)/float64(sides))*2*math.Pi - math.Pi/2 + rotate*math.Pi/180
+		xs[i], ys[i] = math.Cos(a), math.Sin(a)
+		minX, maxX = math.Min(minX, xs[i]), math.Max(maxX, xs[i])
+		minY, maxY = math.Min(minY, ys[i]), math.Max(maxY, ys[i])
+	}
+	out := make([]float64, 0, sides*2)
+	for i := 0; i < sides; i++ {
+		out = append(out,
+			(xs[i]-minX)/(maxX-minX)*100,
+			(ys[i]-minY)/(maxY-minY)*100)
+	}
+	return out
+}
+
 func polygonPoints(sides int, rotate float64) string {
 	if sides < 3 {
 		sides = 6

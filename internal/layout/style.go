@@ -195,6 +195,13 @@ type Style struct {
 	// means by a hexagon, and not the one the maths gives by default.
 	Sides  int
 	Rotate float64
+	// Corner rounds a polygon's vertices, in pixels. The design this
+	// reproduces uses softened hexagons, not sharp ones, and a sharp one reads
+	// as a warning sign rather than as ornament.
+	Corner float64
+	// Stroke draws a polygon as an outline rather than a fill. The header's
+	// cluster mixes the two, which is what stops it reading as a flat pattern.
+	Stroke float64
 	// Opacity fades a node, 0 to 1. Zero means opaque, so a style that says
 	// nothing is drawn normally.
 	Opacity float64

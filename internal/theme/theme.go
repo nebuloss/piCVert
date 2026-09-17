@@ -106,6 +106,8 @@ type RawStyle struct {
 	Shadow     string  `json:"shadow,omitempty"` // "0 5 16 rgba(11,87,208,.30)"
 	Sides      int     `json:"sides,omitempty"`
 	Rotate     float64 `json:"rotate,omitempty"`
+	Corner     float64 `json:"corner,omitempty"`
+	Stroke     float64 `json:"stroke,omitempty"`
 	Opacity    float64 `json:"opacity,omitempty"`
 	Clip       bool    `json:"clip,omitempty"`
 
@@ -385,6 +387,12 @@ func (t *Theme) Resolve(r RawStyle) (layout.Style, error) {
 	}
 	if r.Rotate != 0 {
 		s.Rotate = r.Rotate
+	}
+	if r.Corner != 0 {
+		s.Corner = r.Corner
+	}
+	if r.Stroke != 0 {
+		s.Stroke = r.Stroke
 	}
 	if r.Opacity != 0 {
 		s.Opacity = r.Opacity

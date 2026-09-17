@@ -277,3 +277,37 @@ func firstLines(s string, n int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// A row that grows must spread its children across the room it was given.
+//
+// `justify: between` distributes the width left over after the children are
+// measured — and a growing row is measured at its content's width, not at the
+// width it will end up with. Computing the gap before the growth left a row of
+// ornament bunched at one end, with the space it was meant to spread sitting
+// unused beside it.
+func TestGrowingRowSpreadsItsChildren(t *testing.T) {
+	e := NewEngine(NewFonts())
+	mark := func() *Node {
+		return Box(Style{Display: Block, Width: 20, Height: 20})
+	}
+	// A row that grows into a 600px parent, holding four 20px marks.
+	marks := Box(Style{Display: Row, Grow: 1, Justify: JustifyBetween},
+		mark(), mark(), mark(), mark())
+	header := Box(Style{Display: Row, Width: 600, Height: 100}, marks)
+	page := Box(Style{Display: Block, Width: 600, Height: 200}, header)
+
+	root := e.Layout(page, 600, 200)
+	row := root.Children[0].Children[0]
+
+	if row.Width < 500 {
+		t.Fatalf("the growing row is %.0fpx wide inside a 600px header", row.Width)
+	}
+	// The marks span the row rather than huddling at its start.
+	first := row.Children[0]
+	last := row.Children[len(row.Children)-1]
+	span := (last.X + last.Width) - first.X
+	if span < row.Width*0.9 {
+		t.Errorf("four marks span %.0fpx of a %.0fpx row; they are bunched, not spread",
+			span, row.Width)
+	}
+}

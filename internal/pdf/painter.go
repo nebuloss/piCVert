@@ -267,19 +267,80 @@ func (p *Painter) Shape(f *layout.Frame) {
 	if s.Opacity > 0 && s.Opacity < 1 {
 		fmt.Fprintf(&p.ops, "/GS%d gs\n", int(s.Opacity*100))
 	}
-	if p.setFill(s.Background.Colour) {
-		pts := polygonPoints(sides, s.Rotate)
-		for i := 0; i < len(pts); i += 2 {
+	// Filled or stroked, and rounded at the corners — the same shape the HTML
+	// painter draws, expressed in the operators this format has.
+	ok := false
+	if s.Stroke > 0 {
+		ok = p.setStroke(s.Background.Colour)
+		if ok {
+			fmt.Fprintf(&p.ops, "%s w\n", num(pt(s.Stroke)))
+		}
+	} else {
+		ok = p.setFill(s.Background.Colour)
+	}
+	if ok {
+		p.polygonPath(x, y, w, h, sides, s.Rotate, s.Corner)
+		if s.Stroke > 0 {
+			p.ops.WriteString("S\n")
+		} else {
+			p.ops.WriteString("f\n")
+		}
+	}
+	p.ops.WriteString("Q\n")
+}
+
+// polygonPath traces a polygon, rounding its corners the way the HTML painter
+// does — with a quadratic through each vertex, raised to a cubic because PDF
+// has no quadratic operator.
+func (p *Painter) polygonPath(x, y, w, h float64, sides int, rotate, corner float64) {
+	pts := polygonPoints(sides, rotate)
+	n := len(pts) / 2
+	at := func(i int) (float64, float64) {
+		return x + pts[(i%n)*2]*w/100, y - pts[(i%n)*2+1]*h/100
+	}
+	if corner <= 0 {
+		for i := 0; i < n; i++ {
+			cx, cy := at(i)
 			op := "l"
 			if i == 0 {
 				op = "m"
 			}
-			fmt.Fprintf(&p.ops, "%s %s %s\n",
-				num(x+pts[i]*w/100), num(y-pts[i+1]*h/100), op)
+			fmt.Fprintf(&p.ops, "%s %s %s\n", num(cx), num(cy), op)
 		}
-		p.ops.WriteString("h\nf\n")
+		p.ops.WriteString("h\n")
+		return
 	}
-	p.ops.WriteString("Q\n")
+	// The radius in page units, from the viewBox fraction the theme gave.
+	r := corner / 100 * math.Min(w, h)
+	for i := 0; i < n; i++ {
+		cx, cy := at(i)
+		px, py := at(i - 1 + n)
+		nx, ny := at(i + 1)
+		ax, ay := towardsPt(cx, cy, px, py, r)
+		bx, by := towardsPt(cx, cy, nx, ny, r)
+		if i == 0 {
+			fmt.Fprintf(&p.ops, "%s %s m\n", num(ax), num(ay))
+		} else {
+			fmt.Fprintf(&p.ops, "%s %s l\n", num(ax), num(ay))
+		}
+		// A quadratic (a,c,b) is the cubic with controls two-thirds of the way
+		// from each end towards the quadratic's own control point.
+		c1x, c1y := ax+2.0/3*(cx-ax), ay+2.0/3*(cy-ay)
+		c2x, c2y := bx+2.0/3*(cx-bx), by+2.0/3*(cy-by)
+		fmt.Fprintf(&p.ops, "%s %s %s %s %s %s c\n",
+			num(c1x), num(c1y), num(c2x), num(c2y), num(bx), num(by))
+	}
+	p.ops.WriteString("h\n")
+}
+
+func towardsPt(x, y, tx, ty, r float64) (float64, float64) {
+	dx, dy := tx-x, ty-y
+	d := math.Hypot(dx, dy)
+	if d == 0 {
+		return x, y
+	}
+	f := math.Min(r/d, 0.5)
+	return x + dx*f, y + dy*f
 }
 
 // polygonPoints is the same normalised polygon the HTML painter draws, in
