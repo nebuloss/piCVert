@@ -105,11 +105,13 @@
     "card": {
       "background": "$card",
       "radius": 20,
-      "padding": "11 15"
+      "padding": "11 15",
+      "border": "1 $outline"
     },
     "cardTint": {
       "extends": "card",
-      "background": "$cardAlt"
+      "background": "$cardAlt",
+      "border": "0 $cardAlt"
     },
     "secTitle": {
       "display": "row",
@@ -125,10 +127,10 @@
     },
     "secTitleText": {
       "display": "text",
-      "size": 9.4,
+      "size": 10.5,
       "weight": 700,
       "colour": "$primary",
-      "letter": 0.6,
+      "letter": 0.8,
       "uppercase": true
     },
     "contactRow": {
@@ -148,9 +150,10 @@
     },
     "contactText": {
       "display": "text",
-      "size": 9.6,
+      "size": 10.3,
+      "lineHeight": 1.2,
       "grow": 1,
-      "colour": "$onSurfaceVar"
+      "colour": "$onSurface"
     },
     "lead": {
       "display": "text",
@@ -164,13 +167,15 @@
       "margin": "0 0 6 0"
     },
     "chipGroup": {
-      "margin": "0 0 6 0",
+      "margin": "0 0 7 0",
       "gap": 5
     },
     "chipLabel": {
       "display": "text",
-      "size": 8.8,
-      "weight": 500,
+      "size": 8.7,
+      "weight": 700,
+      "uppercase": true,
+      "letter": 0.5,
       "colour": "$onSurfaceVar"
     },
     "chips": {
@@ -180,11 +185,28 @@
     },
     "chip": {
       "display": "text",
-      "size": 8.8,
+      "size": 9.3,
+      "weight": 500,
       "padding": "3 8",
       "radius": 999,
       "background": "$secondaryContainer",
       "colour": "$onSecondary"
+    },
+    "chipPri": {
+      "extends": "chip",
+      "background": "$primaryContainer",
+      "colour": "$onPrimaryContainer"
+    },
+    "chipTer": {
+      "extends": "chip",
+      "background": "$tertiaryContainer",
+      "colour": "$onTertiary"
+    },
+    "chipGhost": {
+      "extends": "chip",
+      "background": "$card",
+      "colour": "$onSurfaceVar",
+      "border": "1 $outline"
     },
     "lang": {
       "margin": "0 0 7 0"
@@ -196,24 +218,23 @@
     },
     "langName": {
       "display": "text",
-      "size": 9.6,
-      "weight": 500
+      "size": 10
     },
     "langLevel": {
       "display": "text",
-      "size": 8.8,
+      "size": 9,
       "colour": "$onSurfaceVar"
     },
     "bar": {
       "background": "$cardAlt",
       "height": 6,
-      "radius": 3,
+      "radius": 999,
       "clip": true
     },
     "barFill": {
       "background": "$primary",
       "height": 6,
-      "radius": 3
+      "radius": 999
     },
     "profil": {
       "display": "text",
@@ -224,11 +245,12 @@
     "item": {
       "display": "row",
       "gap": 8,
-      "margin": "0 0 10 0"
+      "margin": "0 0 10 0",
+      "align": "stretch"
     },
     "itemRail": {
       "width": 8,
-      "gap": 3
+      "self": "stretch"
     },
     "itemDot": {
       "display": "ellipse",
@@ -237,13 +259,19 @@
       "background": "$primary",
       "margin": "4 0 0 0"
     },
+    "itemLine": {
+      "width": 1.5,
+      "grow": 1,
+      "background": "$outline",
+      "margin": "6 0 0 3.25"
+    },
     "itemBody": {
       "grow": 1
     },
     "itHead": {
       "display": "row",
       "justify": "between",
-      "align": "start",
+      "align": "baseline",
       "gap": 8
     },
     "itRole": {
@@ -285,7 +313,7 @@
       "width": 3.5,
       "height": 3.5,
       "background": "$primary",
-      "margin": "5 0 0 0"
+      "margin": "6 0 0 0"
     },
     "bulletText": {
       "display": "text",
@@ -294,43 +322,9 @@
       "grow": 1,
       "colour": "$onSurfaceVar"
     },
-    "headerOrnament": {
-      "display": "row",
-      "grow": 1,
-      "align": "center",
-      "justify": "between",
-      "gap": 10
-    },
-    "hexLarge": {
-      "display": "polygon",
-      "sides": 6,
-      "rotate": 30,
-      "width": 54,
-      "height": 62,
-      "background": "$primary",
-      "opacity": 0.13
-    },
-    "hexMedium": {
-      "display": "polygon",
-      "sides": 6,
-      "rotate": 30,
-      "width": 34,
-      "height": 39,
-      "background": "$primary",
-      "opacity": 0.1,
-      "self": "start",
-      "margin": "16 0 0 0"
-    },
-    "hexSmall": {
-      "display": "polygon",
-      "sides": 6,
-      "rotate": 30,
-      "width": 22,
-      "height": 25,
-      "background": "$primary",
-      "opacity": 0.16,
-      "self": "end",
-      "margin": "0 0 18 0"
+    "bulletProj": {
+      "extends": "bullet",
+      "margin": "0 0 3 0"
     }
   },
   "page": {
@@ -358,20 +352,6 @@
               {
                 "style": "subtitle",
                 "text": "{subtitleLine}"
-              }
-            ]
-          },
-          {
-            "style": "headerOrnament",
-            "children": [
-              {
-                "style": "hexSmall"
-              },
-              {
-                "style": "hexLarge"
-              },
-              {
-                "style": "hexMedium"
               }
             ]
           }
@@ -467,7 +447,15 @@
                       "children": [
                         {
                           "style": "chip",
-                          "text": "{text}"
+                          "text": "{text}",
+                          "styleBy": {
+                            "field": "variant",
+                            "cases": {
+                              "pri": "chipPri",
+                              "ter": "chipTer",
+                              "ghost": "chipGhost"
+                            }
+                          }
                         }
                       ]
                     }
@@ -518,10 +506,8 @@
                   "style": "bar",
                   "children": [
                     {
-                      "inline": {
-                        "extends": "barFill",
-                        "width": 0
-                      },
+                      "style": "barFill",
+                      "widthFrom": "value",
                       "id": "gauge"
                     }
                   ]
@@ -613,6 +599,9 @@
                   "children": [
                     {
                       "style": "itemDot"
+                    },
+                    {
+                      "style": "itemLine"
                     }
                   ]
                 },

@@ -96,6 +96,26 @@ func (s scope) present(key string) bool {
 	return true
 }
 
+// clampPercent reads a gauge value, and keeps it inside 0..100.
+func clampPercent(v any) float64 {
+	var n float64
+	switch t := v.(type) {
+	case float64:
+		n = t
+	case int:
+		n = float64(t)
+	default:
+		return 0
+	}
+	if n < 0 {
+		return 0
+	}
+	if n > 100 {
+		return 100
+	}
+	return n
+}
+
 var binding = regexp.MustCompile(`\{([#a-zA-Z0-9_.]+)\}`)
 
 // interpolate replaces `{field}` with its value, leaving literal text alone.
@@ -209,7 +229,9 @@ func (c *Composer) element(e *Element, sc scope, doc document.Doc) ([]*layout.No
 		return out, nil
 	}
 
-	style, err := c.styleOf(e)
+	chosen := *e
+	chosen.Style = c.styleFor(e, sc)
+	style, err := c.styleOf(&chosen)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +239,13 @@ func (c *Composer) element(e *Element, sc scope, doc document.Doc) ([]*layout.No
 	node := &layout.Node{Style: style}
 	if e.ID != "" {
 		node.ID = sc.interpolate(e.ID)
+	}
+	if e.WidthFrom != "" {
+		// Clamped: a gauge is a proportion, and a document that says 140 means
+		// full rather than a bar running out of its own track.
+		if v, ok := sc.lookup(e.WidthFrom); ok {
+			node.Style.WidthPercent = clampPercent(v)
+		}
 	}
 
 	switch {
@@ -266,6 +295,23 @@ func (c *Composer) element(e *Element, sc scope, doc document.Doc) ([]*layout.No
 	}
 
 	return []*layout.Node{node}, nil
+}
+
+// styleFor picks a style by the value of a field, when the element says so.
+//
+// A chip's variant is an ENUM in the field tree — one of a fixed set — so
+// mapping its values to styles is data, exactly as the rest of a theme is. The
+// alternative was a conditional in the composition language, which is how a
+// composition language stops being data.
+func (c *Composer) styleFor(e *Element, sc scope) string {
+	if e.StyleBy == nil {
+		return e.Style
+	}
+	value := sc.str(e.StyleBy.Field)
+	if hit, ok := e.StyleBy.Cases[value]; ok {
+		return hit
+	}
+	return e.Style
 }
 
 func (c *Composer) styleOf(e *Element) (layout.Style, error) {

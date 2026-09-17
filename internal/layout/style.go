@@ -157,6 +157,12 @@ type Style struct {
 
 	// Width and Height in pixels. Zero means "as needed".
 	Width, Height float64
+	// WidthPercent is a width given as a share of the room offered, 0 to 100.
+	//
+	// The language gauge needs it: its fill is "82% of the bar", and no number
+	// of pixels can say that, because the bar's own width depends on the column
+	// it lands in. It takes precedence over Width when set.
+	WidthPercent float64
 	// Grow shares out leftover space along the main axis, like `flex-grow`.
 	Grow float64
 	// Gap between children, along the main axis. Also the line gap when

@@ -3,7 +3,14 @@ package layout
 import "math"
 
 // Space is the room a node is offered by its parent.
-type Space struct{ Width, Height float64 }
+type Space struct {
+	Width, Height float64
+	// FixedHeight says the height is imposed rather than merely available —
+	// what a stretched child is given. A block may then share out what is left
+	// of it, which is how a rule can run the height of the entry beside it
+	// without anyone knowing that height in advance.
+	FixedHeight bool
+}
 
 // Layouter measures one kind of node.
 //
@@ -64,7 +71,9 @@ func boxOf(s Style, avail Space) box {
 		inset.Left += w
 	}
 	outer := s.Width
-	if outer == 0 {
+	if s.WidthPercent > 0 {
+		outer = (avail.Width - s.Margin.Left - s.Margin.Right) * s.WidthPercent / 100
+	} else if outer == 0 {
 		outer = avail.Width - s.Margin.Left - s.Margin.Right
 	}
 	return box{
@@ -174,8 +183,12 @@ func (blockLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 	// columns run the full body height — and what made reading a finished PDF
 	// back useless, since both columns then measure as exactly full whatever
 	// they hold.
-	if len(growing) > 0 && s.Height > 0 {
-		spare := s.Height - b.inset.Top - b.inset.Bottom - y
+	height := s.Height
+	if height == 0 && avail.FixedHeight {
+		height = avail.Height
+	}
+	if len(growing) > 0 && height > 0 {
+		spare := height - b.inset.Top - b.inset.Bottom - y
 		if spare > 0 {
 			share := spare / float64(len(growing))
 			shift := 0.0
@@ -228,7 +241,7 @@ func (r rowLayout) Measure(e *Engine, n *Node, avail Space) *Frame {
 		}
 		used := r.share(e, line, s, b.inner)
 		height := r.tallest(line)
-		r.place(f, line, s, y, height, b.inner-used)
+		r.place(e, f, line, s, y, height, b.inner-used)
 		widest = math.Max(widest, used)
 		y += height
 	}
@@ -344,7 +357,7 @@ func (rowLayout) tallest(line []seat) float64 {
 }
 
 // place positions one line's children along it.
-func (rowLayout) place(f *Frame, line []seat, s Style, top, height, spare float64) {
+func (rowLayout) place(e *Engine, f *Frame, line []seat, s Style, top, height, spare float64) {
 	gap := s.Gap
 	if s.Justify == JustifyBetween && len(line) > 1 && spare > 0 {
 		gap += spare / float64(len(line)-1)
@@ -356,6 +369,16 @@ func (rowLayout) place(f *Frame, line []seat, s Style, top, height, spare float6
 		}
 		x += st.node.Style.Margin.Left
 		st.frame.X = x
+		if s.AlignOf(st.node.Style) == AlignStretch && st.node.Style.Height == 0 {
+			// Re-laid at the height the row turned out to be, and told that the
+			// height is imposed — otherwise a rule inside it has nothing to
+			// grow into.
+			stretched := e.Measure(st.node, Space{
+				Width: st.frame.Width, Height: height, FixedHeight: true})
+			stretched.X, stretched.Y = st.frame.X, st.frame.Y
+			stretched.Height = height
+			*st.frame = *stretched
+		}
 		st.frame.Y = top + s.AlignOf(st.node.Style).offset(
 			height, st.frame.Height, st.node.Style.Margin.Top)
 		x += st.frame.Width + st.node.Style.Margin.Right

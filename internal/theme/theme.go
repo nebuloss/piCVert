@@ -84,13 +84,17 @@ type RawStyle struct {
 
 	Display string `json:"display,omitempty"` // block | row | row-wrap | text | image | ellipse
 
-	Width    any     `json:"width,omitempty"`
-	Height   any     `json:"height,omitempty"`
-	Grow     float64 `json:"grow,omitempty"`
-	Gap      float64 `json:"gap,omitempty"`
-	CrossGap float64 `json:"crossGap,omitempty"`
-	Padding  string  `json:"padding,omitempty"` // "v h" | "t r b l" | "all"
-	Margin   string  `json:"margin,omitempty"`
+	// WidthPercent is a width as a share of the room offered, 0 to 100 — what
+	// the language gauge needs, since "82% of the bar" is not a number of
+	// pixels the theme can know.
+	WidthPercent float64 `json:"widthPercent,omitempty"`
+	Width        any     `json:"width,omitempty"`
+	Height       any     `json:"height,omitempty"`
+	Grow         float64 `json:"grow,omitempty"`
+	Gap          float64 `json:"gap,omitempty"`
+	CrossGap     float64 `json:"crossGap,omitempty"`
+	Padding      string  `json:"padding,omitempty"` // "v h" | "t r b l" | "all"
+	Margin       string  `json:"margin,omitempty"`
 
 	Align   string `json:"align,omitempty"`   // start | center | end | baseline | stretch
 	Justify string `json:"justify,omitempty"` // start | between
@@ -126,6 +130,19 @@ type Element struct {
 	Style  string    `json:"style,omitempty"`
 	Inline *RawStyle `json:"inline,omitempty"`
 
+	// StyleBy picks the style from a field's value, for a field whose values
+	// are a closed set — a chip's variant being the case that asked for it.
+	StyleBy *StyleBy `json:"styleBy,omitempty"`
+
+	// WidthFrom names a field holding a percentage, which becomes this node's
+	// width as a share of the room offered.
+	//
+	// The language gauge is the whole reason: its fill is "82% of the bar", and
+	// the bar's own width depends on the column it lands in, so no number of
+	// pixels can express it. Text binds with `{field}`; this is the same idea
+	// for a length.
+	WidthFrom string `json:"widthFrom,omitempty"`
+
 	// ID names this node so overflow can report it. `$id` interpolates the
 	// section's own identifier.
 	ID string `json:"id,omitempty"`
@@ -153,6 +170,12 @@ type Element struct {
 	Slot string `json:"slot,omitempty"`
 
 	Children []*Element `json:"children,omitempty"`
+}
+
+// StyleBy maps the values of one field to style names.
+type StyleBy struct {
+	Field string            `json:"field"`
+	Cases map[string]string `json:"cases"`
 }
 
 // Load reads a theme from a template directory.
@@ -263,6 +286,9 @@ func (t *Theme) Resolve(r RawStyle) (layout.Style, error) {
 		s.Display = d
 	}
 
+	if r.WidthPercent != 0 {
+		s.WidthPercent = r.WidthPercent
+	}
 	if v, ok := length(r.Width); ok {
 		s.Width = v
 	}
