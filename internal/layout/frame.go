@@ -1,5 +1,7 @@
 package layout
 
+import "math"
+
 // Frame is a node once it has been placed: a box, and what is inside it.
 //
 // This tree is the SINGLE SOURCE both renderings are drawn from. Positions are
@@ -83,6 +85,38 @@ func (f *Frame) Overflow(usableBottom float64) []string {
 // Fits reports whether everything holds within the page.
 func (f *Frame) Fits(usableBottom float64) bool {
 	return len(f.Overflow(usableBottom)) == 0
+}
+
+// Collides reports whether any two pieces of text overlap.
+//
+// A SECOND CONDITION ON FITTING, and the reason is the tightening: closing the
+// spacing far enough will always make a page "fit", by running its lines into
+// one another. A page that fits by collapsing is worse than one that honestly
+// reports being too long, because it looks like a finished document.
+//
+// Only text is compared. Boxes overlap by design all the time — a card sits on
+// the page, a chip sits in a card, ornament sits behind everything — and it is
+// only when the words touch that a reader is looking at a fault.
+func (f *Frame) Collides() bool {
+	var runs []*Frame
+	f.Walk(func(fr *Frame) {
+		if fr.Style.Display == Text && len(fr.Lines) > 0 && fr.Width > 0 && fr.Height > 0 {
+			runs = append(runs, fr)
+		}
+	})
+	for i := 0; i < len(runs); i++ {
+		for j := i + 1; j < len(runs); j++ {
+			a, b := runs[i], runs[j]
+			// A pixel of tolerance: boxes that merely abut are not a fault, and
+			// rounding puts neighbours a fraction apart either way.
+			ox := math.Min(a.X+a.Width, b.X+b.Width) - math.Max(a.X, b.X)
+			oy := math.Min(a.Bottom(), b.Bottom()) - math.Max(a.Y, b.Y)
+			if ox > 1 && oy > 1 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Margins is the room left under each region, by name — what the editor shows

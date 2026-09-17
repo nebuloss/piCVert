@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"flag"
 	"fmt"
 	"os"
@@ -41,9 +42,9 @@ func pdfCmd(args []string) error {
 		return err
 	}
 
-	fmt.Printf("%s  %d KB", *out, len(data)/1024)
-	if !p.Render.Fits() {
-		fmt.Printf("  (does not fit: shorten %v)", p.Render.Overflow())
+	fmt.Printf("%s  %d KB  —  %s", *out, len(data)/1024, fitSummary(p))
+	if !p.Fitted.Fits {
+		fmt.Printf("  (shorten %s)", strings.Join(p.Render.Overflow(), ", "))
 	}
 	fmt.Println()
 	return nil

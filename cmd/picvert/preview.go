@@ -89,11 +89,7 @@ func previewCmd(args []string) error {
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		if p.Render.Fits() {
-			fmt.Fprintln(w, "fits on one page")
-		} else {
-			fmt.Fprintln(w, "DOES NOT FIT")
-		}
+		fmt.Fprintln(w, fitSummary(p))
 		margins := p.Render.Margins(p.Template.Columns)
 		for _, name := range p.Template.Columns {
 			fmt.Fprintf(w, "  %-6s %+8.1f px left\n", name, margins[name])

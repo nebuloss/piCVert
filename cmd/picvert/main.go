@@ -101,6 +101,7 @@ type prepared struct {
 	Template *templates.Template
 	Render   *layout.Render
 	Fonts    *layout.Fonts
+	Fitted   layout.Fitted
 }
 
 // build is the pipeline, start to finish. Both commands go through it, so what
@@ -141,18 +142,34 @@ func build(profileDir, lang string) (*prepared, error) {
 	}
 
 	composer := &theme.Composer{Theme: tpl.Theme, Icons: tpl.Icons, Regions: tpl.Columns}
-	node, err := composer.Page(ready)
-	if err != nil {
-		return nil, err
+	// Composed afresh for each attempt: the fit ladder tightens the NODES, so
+	// a tree handed to it twice would be tightened twice.
+	var composeErr error
+	compose := func() *layout.Node {
+		node, err := composer.Page(ready)
+		if err != nil {
+			// An empty page fits, so the ladder stops on the first rung and the
+			// error is reported instead of being tried ten more times.
+			composeErr = err
+			return &layout.Node{}
+		}
+		return node
 	}
 
-	frame := layout.NewEngine(fonts).Layout(node, layout.PageWidth, layout.PageHeight)
+	usable := layout.PageHeight - tpl.Theme.PagePadding()
+	fitted := layout.NewEngine(fonts).LayoutFitted(
+		compose, layout.PageWidth, layout.PageHeight, usable)
+	if composeErr != nil {
+		return nil, composeErr
+	}
+
 	return &prepared{
 		Template: tpl,
 		Fonts:    fonts,
+		Fitted:   fitted,
 		Render: &layout.Render{
-			Frame: frame, Width: layout.PageWidth, Height: layout.PageHeight,
-			Usable: layout.PageHeight - tpl.Theme.PagePadding(),
+			Frame: fitted.Frame, Width: layout.PageWidth, Height: layout.PageHeight,
+			Usable: usable,
 		},
 	}, nil
 }
@@ -248,18 +265,37 @@ func fitCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	if p.Render.Fits() {
-		fmt.Println("fits on one page")
-	} else {
-		fmt.Println("DOES NOT FIT")
-	}
+	fmt.Println(fitSummary(p))
+	margins := p.Render.Margins(p.Template.Columns)
 	for _, name := range p.Template.Columns {
-		fmt.Printf("  %-6s %+8.1f px left\n", name, p.Render.Margins(p.Template.Columns)[name])
+		fmt.Printf("  %-6s %+8.1f px left\n", name, margins[name])
 	}
 	if over := p.Render.Overflow(); len(over) > 0 {
 		fmt.Printf("  shorten: %s\n", strings.Join(over, ", "))
 	}
 	return nil
+}
+
+// fitSummary says whether the page holds, and what that cost.
+//
+// The tightening is REPORTED, never hidden. Someone whose CV only fits at 62%
+// spacing has a CV that is too long, and is owed that fact even though the page
+// in front of them looks fine — it is the difference between a document that
+// fits and one that has been made to.
+func fitSummary(p *prepared) string {
+	f := p.Fitted
+	switch {
+	case !f.Fits:
+		return "DOES NOT FIT, even set as tightly as this engine will go"
+	case !f.Tightened:
+		return "fits on one page"
+	case f.Density.Text < 1:
+		return fmt.Sprintf("fits — tightened to %.0f%% spacing and %.0f%% type",
+			f.Density.Spacing*100, f.Density.Text*100)
+	default:
+		return fmt.Sprintf("fits — tightened to %.0f%% spacing",
+			f.Density.Spacing*100)
+	}
 }
 
 var photoMIME = map[string]string{
