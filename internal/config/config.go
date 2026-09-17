@@ -351,34 +351,46 @@ func (c *Config) check() error {
 			"admin.password is not a hash — it looks like a plaintext password.\n" +
 				"Run `picvert passwd` and paste what it prints")
 	}
-	// The administration port manages every CV and hands out every private link
-	// on the service. What used to protect it was that it listened on localhost
-	// and could only be reached by somebody already on the machine.
-	//
-	// Reachable from the network, that protection is simply gone — so the
-	// password stops being optional. REFUSED at startup rather than warned
-	// about: a warning in a log is a warning nobody reads, and the thing it
-	// would be warning about is an unauthenticated interface that deletes CVs.
-	if c.Admin.Listen != "" && !isLoopback(c.Admin.Listen) &&
-		c.Admin.Password == "" && !c.Admin.Open {
-		return fmt.Errorf(
-			"admin.listen is %q, which is reachable from the network, and no "+
-				"admin.password is set.\n\n"+
-				"That interface manages every CV on this service and hands out "+
-				"every private link — which are the only credentials this "+
-				"service has.\n\n"+
-				"  set a password      picvert passwd\n"+
-				"  keep it local       admin.listen: \"127.0.0.1:3001\"\n"+
-				"  turn it off         admin.listen: \"\"\n"+
-				"  or, knowingly       admin:\n"+
-				"                        i-know-this-port-is-reachable: true",
-			c.Admin.Listen)
-	}
 	if c.Turnstile.SiteKey != "" && c.Turnstile.Secret == "" {
 		return fmt.Errorf("turnstile.site-key is set without turnstile.secret — " +
 			"a challenge checked only in the browser is not checked")
 	}
 	return nil
+}
+
+// CheckServing is what only matters when a port is about to be opened.
+//
+// SEPARATE FROM check, and the separation is the point: `picvert new`,
+// `backup`, `config` and `passwd` open nothing, and refusing to run them over
+// the administration port's password is refusing for a reason that has nothing
+// to do with them. It broke `picvert new` on a fresh install, which is the
+// first command anybody runs.
+//
+// The administration port manages every CV and hands out every private link on
+// the service. What used to protect it was listening on localhost, reachable
+// only from the machine itself; bound wider, that protection is gone and the
+// password stops being optional.
+//
+// Refused rather than warned about: a warning in a log is a warning nobody
+// reads, and what it would be warning about is an unauthenticated interface
+// that deletes CVs.
+func (c Config) CheckServing() error {
+	if c.Admin.Listen == "" || isLoopback(c.Admin.Listen) ||
+		c.Admin.Password != "" || c.Admin.Open {
+		return nil
+	}
+	return fmt.Errorf(
+		"admin.listen is %q, which is reachable from the network, and no "+
+			"admin.password is set.\n\n"+
+			"That interface manages every CV on this service and hands out "+
+			"every private link — which are the only credentials this "+
+			"service has.\n\n"+
+			"  set a password      picvert passwd\n"+
+			"  keep it local       admin.listen: \"127.0.0.1:3001\"\n"+
+			"  turn it off         admin.listen: \"\"\n"+
+			"  or, knowingly       admin:\n"+
+			"                        i-know-this-port-is-reachable: true",
+		c.Admin.Listen)
 }
 
 // isLoopback reports whether an address can only be reached from this machine.

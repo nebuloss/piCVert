@@ -28,9 +28,13 @@ func TestBothPortsAreReachable(t *testing.T) {
 // Both being reachable, a password is the one thing that must be decided — and
 // the refusal has to say so in words somebody can act on rather than fail
 // obscurely.
+//
+// Checked only when a port is about to be OPENED. `picvert new` and `backup`
+// open nothing, and refusing to run them over this was refusing for a reason
+// that had nothing to do with them — it broke the first command anybody runs
+// on a fresh install.
 func TestTheDefaultsAskForAPassword(t *testing.T) {
-	c := Defaults()
-	err := c.check()
+	err := Defaults().CheckServing()
 	if err == nil {
 		t.Fatal("a reachable administration port started with no password")
 	}
@@ -47,7 +51,7 @@ func TestAReachableAdminPortNeedsAPassword(t *testing.T) {
 	for _, address := range []string{"0.0.0.0:3001", ":3001", "10.0.0.5:3001"} {
 		c := Defaults()
 		c.Admin.Listen = address
-		if err := c.check(); err == nil {
+		if err := c.CheckServing(); err == nil {
 			t.Errorf("%q was accepted with no password", address)
 		}
 	}
@@ -74,7 +78,7 @@ func TestTheWaysToSatisfyIt(t *testing.T) {
 		c := Defaults()
 		c.Admin.Listen = "0.0.0.0:3001"
 		one.with(&c)
-		if err := c.check(); err != nil {
+		if err := c.CheckServing(); err != nil {
 			t.Errorf("%s was still refused: %v", one.name, err)
 		}
 	}
@@ -105,5 +109,20 @@ func TestAPlaintextPasswordIsRefused(t *testing.T) {
 	c.Admin.Password = "hunter2"
 	if err := c.check(); err == nil {
 		t.Fatal("a plaintext password was accepted")
+	}
+}
+
+// The commands that open no port are not held to the serving rules.
+//
+// `picvert new` on a fresh install failed on the administration port's
+// password, which is a refusal for a reason that has nothing to do with making
+// a CV — and it is the first command anybody runs.
+func TestCommandsThatOpenNoPortAreNotRefused(t *testing.T) {
+	c := Defaults() // reachable admin port, no password
+	if err := c.check(); err != nil {
+		t.Fatalf("loading a default configuration failed: %v", err)
+	}
+	if err := c.CheckServing(); err == nil {
+		t.Fatal("serving with that configuration was allowed")
 	}
 }

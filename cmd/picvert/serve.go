@@ -30,6 +30,19 @@ func serveCmd(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Only serve opens a port, so only serve answers for what opening one
+	// means. The other commands do not, and refusing to run `picvert new` over
+	// the administration port's password is refusing for a reason that has
+	// nothing to do with it.
+	if *adminAddr != "" && *adminAddr != "off" {
+		cfg.Admin.Listen = *adminAddr
+	}
+	if *adminAddr == "off" {
+		cfg.Admin.Listen = ""
+	}
+	if err := cfg.CheckServing(); err != nil {
+		return err
+	}
 	root, err := home()
 	if err != nil {
 		return err
