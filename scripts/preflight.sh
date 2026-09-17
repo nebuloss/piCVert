@@ -94,6 +94,19 @@ TARGETS
 echo "› installer"
 sh -n deploy/install.sh && ok 'install.sh' || bad 'install.sh'
 
+# The binary must work with nothing beside it, which is what an installed
+# release is. This is checked because the claim that it did was made everywhere
+# and was false: every test pointed the engine at the checkout, where the
+# directory it needed happened to exist.
+echo "› standalone"
+alone=$(mktemp -d)
+CGO_ENABLED=0 go build -o "$alone/picvert" ./cmd/picvert 2>/dev/null
+( cd "$alone" && PICVERT_HOME="$alone/nothing" PICVERT_DATA="$alone/data" \
+    ./picvert new --slug probe --name "Probe" > /dev/null 2>&1 ) \
+  && ok 'renders with nothing beside the binary' \
+  || bad 'the binary needs a directory beside it'
+rm -rf "$alone"
+
 exit "$fail"
 REMOTE
 result=$?
