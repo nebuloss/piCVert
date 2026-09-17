@@ -110,6 +110,45 @@ edits. No account, no password, nothing to reset.
 `PICVERT_PUBLIC`.** An unpublished CV answers exactly as a missing one does, so
 the address bar cannot be used to find out whose CVs are here.
 
+## Two people editing one CV
+
+A link is the only credential here, so sharing one is how a CV comes to have two
+editors — and a forgotten tab on another machine counts as the second. What
+happens is worth knowing exactly, because two thirds of it is a limitation.
+
+**Nobody is locked out.** Both people can open the CV and both can type. Nothing
+marks a field, a section or the document as taken, and nothing records that
+anyone is editing.
+
+**Neither sees the other's changes arrive.** There is no channel from the server
+to an open editor — no polling, no events, no socket. Each shows the document it
+loaded plus what its own user has typed, until it is reloaded.
+
+**The second save is refused, not applied.** Every save says which version it was
+built from; one built on a version that has since moved is rejected, and the
+editor asks the person what they want:
+
+> Someone else has changed this CV since you opened it.
+> **OK** — reload theirs, and lose what you have typed here.
+> **Cancel** — keep yours, and overwrite theirs.
+
+Saving stops until that is answered, so nothing is decided by default.
+
+So the guarantee is narrow and worth stating precisely: **no change is destroyed
+without somebody being told.** It is not collaborative editing. Two people
+working on a CV at the same time will interrupt each other, and one of them will
+lose work — deliberately, having been asked, rather than silently.
+
+The comparison is per **document**, not per field: the editor sends the whole CV
+and the version covers all of it, so two people editing unrelated sections
+collide exactly as two people editing one line do. `internal/server/sharing_test.go`
+records all of this, including that last part, so that a future merge has a test
+to contradict.
+
+**In practice this rarely bites**, because a CV has one author. It is worth
+knowing before handing an edit link to two people and expecting them to work on
+it together — for that, send one of them the read link.
+
 ## Backups
 
 Back up **`/var/lib/picvert/data`** and nothing else.

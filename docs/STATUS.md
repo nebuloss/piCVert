@@ -58,6 +58,13 @@ verified on a build host over SSH.
 but nothing yet reads it back out, and there is no bundle format for a CV plus
 its portrait.
 
+**Collaborative editing.** Two people with the same edit link do not see each
+other's changes, and there is no lock. The second save is refused rather than
+applied, and the person is asked whether to reload or overwrite — so no work is
+destroyed silently, but two people cannot usefully edit one CV at once. The
+comparison is per document, not per field, so unrelated sections collide too.
+`internal/server/sharing_test.go` records the behaviour, limitations included.
+
 **Anything self-service.** A CV is created from the admin port or the command
 line. A public creation route needs a quota, a per-address limit and a
 challenge before it is safe to expose, and none of that is written — so it is
