@@ -201,20 +201,36 @@ func ClientIP(r *http.Request) string {
 	return host
 }
 
-// Throttle refuses addresses that have failed too often, early.
-func (g *Guard) Throttle(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if retry, blocked := g.Blocked(ClientIP(r)); blocked {
-			seconds := int(retry.Seconds()) + 1
-			w.Header().Set("Retry-After", strconv.Itoa(seconds))
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.WriteHeader(http.StatusTooManyRequests)
-			fmt.Fprintf(w, `{"ok":false,"error":"Too many attempts. Try again in %d minute(s)."}`,
-				(seconds+59)/60)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+// Refuse tells a blocked caller so, and reports whether it did.
+//
+// NOT a middleware, deliberately, and that is a correction rather than a style.
+// As one it ran BEFORE the credential was checked, so somebody holding a
+// perfectly good link was refused because another machine behind the same
+// address had been guessing — and being right never cleared it, because the
+// handler that would have recorded the success was never reached. One person
+// scanning locked out everybody on that address for a quarter of an hour,
+// including the person whose CV it was.
+//
+// So the caller checks the credential FIRST and calls this only when the
+// credential is bad. A valid link is always served; an invalid one is counted
+// and, past the threshold, refused.
+//
+// Nothing is weakened by that. The throttle exists to make GUESSING expensive,
+// and a guess is exactly what still gets counted. Somebody who has the token
+// does not need to guess, and somebody who does not have it gains nothing from
+// this being lenient to people who do.
+func (g *Guard) Refuse(w http.ResponseWriter, r *http.Request) bool {
+	retry, blocked := g.Blocked(ClientIP(r))
+	if !blocked {
+		return false
+	}
+	seconds := int(retry.Seconds()) + 1
+	w.Header().Set("Retry-After", strconv.Itoa(seconds))
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusTooManyRequests)
+	fmt.Fprintf(w, `{"ok":false,"error":"Too many attempts. Try again in %d minute(s)."}`,
+		(seconds+59)/60)
+	return true
 }
 
 // --- headers ----------------------------------------------------------------

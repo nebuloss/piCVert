@@ -49,6 +49,9 @@ func (s *Server) apiRoute(w http.ResponseWriter, r *http.Request) {
 	grant, ok := s.Tokens.Verify(token)
 	if !ok {
 		s.Guard.RecordFailure(security.ClientIP(r))
+		if s.Guard.Refuse(w, r) {
+			return
+		}
 		fail(w, http.StatusUnauthorized, fmt.Errorf("invalid or expired link"))
 		return
 	}

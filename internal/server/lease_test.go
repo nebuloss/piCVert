@@ -239,3 +239,38 @@ func TestTwoTabsOfOneBrowserAreTwoEditors(t *testing.T) {
 		t.Fatalf("the second tab saved anyway: %d", w.Code)
 	}
 }
+
+// Somebody guessing links must not lock out somebody holding a real one.
+//
+// The throttle used to run BEFORE the link was checked, so a valid link was
+// refused because another machine behind the same address had been guessing —
+// and being right never cleared it, because the handler that records a success
+// was never reached. One person scanning locked out everybody on that address
+// for a quarter of an hour, including whoever's CV it was.
+//
+// Behind a company's shared address, that is one careless person costing
+// everybody else access to their own CVs.
+func TestGuessingDoesNotLockOutSomebodyWithARealLink(t *testing.T) {
+	s, slug := service(t)
+	h := s.Handler()
+	links, _ := s.Tokens.ForProfile(slug)
+
+	// Somebody on this address tries a great many bad links.
+	for i := 0; i < 30; i++ {
+		call(t, h, "GET", "/e/aaaaaaaaaaaaaaaaaaaaaaaa/", nil, nil)
+	}
+	// They are refused, which is the point of the throttle.
+	if w := call(t, h, "GET", "/e/bbbbbbbbbbbbbbbbbbbbbbbb/", nil, nil); w.Code != http.StatusTooManyRequests {
+		t.Errorf("guessing was not throttled: %d", w.Code)
+	}
+
+	// And somebody holding a real link is served anyway.
+	if w := call(t, h, "GET", "/e/"+links.Read+"/", nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("a valid link was refused because of somebody else's "+
+			"guessing: %d", w.Code)
+	}
+	// Having proved they are not scanning, the address is clear again.
+	if w := call(t, h, "GET", "/e/"+links.Edit+"/", nil, nil); w.Code != http.StatusOK {
+		t.Errorf("the address was not cleared by a valid link: %d", w.Code)
+	}
+}

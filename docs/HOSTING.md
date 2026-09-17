@@ -97,6 +97,9 @@ edits. No account, no password, nothing to reset.
 - Tokens are 192 bits. Guessing one is out of reach; hammering the service
   is not, so a per-address failure counter refuses an address that has tried
   ten bad links, and says so once in the log rather than once per attempt.
+  A **valid** link is always served and clears the counter, so one person
+  guessing cannot lock out everybody behind the same address — which matters
+  wherever an office shares one.
 - They are stored **in clear**, in `data/.share-tokens.json`, mode 0600. That is
   on purpose: a link you cannot be shown again is not a stable link, and
   reissuing is what breaks every copy already handed out.

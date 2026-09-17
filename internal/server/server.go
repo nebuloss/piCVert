@@ -277,14 +277,15 @@ func (s *Server) Handler() http.Handler {
 		http.Redirect(w, r, "/p/"+r.PathValue("slug")+"/", http.StatusMovedPermanently)
 	})
 
-	// The private surface. Throttled, because a link is the only secret there
-	// is and a machine can try them in a loop.
-	mux.Handle("GET /e/{token}/", s.Guard.Throttle(http.HandlerFunc(s.shareRoute)))
+	// The private surface. The throttle lives INSIDE these handlers rather than
+	// in front of them: a link is checked first, and only a bad one counts
+	// against the address. See Guard.Refuse.
+	mux.HandleFunc("GET /e/{token}/", s.shareRoute)
 	mux.HandleFunc("GET /e/{token}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/e/"+r.PathValue("token")+"/", http.StatusFound)
 	})
 
-	mux.Handle("/api/", s.Guard.Throttle(http.HandlerFunc(s.apiRoute)))
+	mux.HandleFunc("/api/", s.apiRoute)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", assetHandler(s.Guard)))
 
 	mux.HandleFunc("GET /{$}", s.home)
@@ -349,10 +350,18 @@ func (s *Server) shareRoute(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	grant, ok := s.Tokens.Verify(token)
 	if !ok {
+		// Counted first, then refused. A bad link is a bad link whether or not
+		// this address had already run out of patience.
 		s.Guard.RecordFailure(security.ClientIP(r))
+		if s.Guard.Refuse(w, r) {
+			return
+		}
 		fail(w, http.StatusNotFound, fmt.Errorf("invalid or expired link"))
 		return
 	}
+	// A good link clears the address. Somebody who has just proved they hold a
+	// token is not somebody scanning for one, whatever their neighbours have
+	// been doing.
 	s.Guard.RecordSuccess(security.ClientIP(r))
 
 	// Belt as well as braces. robots.txt is a request a crawler may ignore and
