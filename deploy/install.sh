@@ -220,9 +220,24 @@ else
     fi
   fi
 
-  chown "root:$SERVICE_USER" "$CONFIG" 2>/dev/null || true
   chmod 0640 "$CONFIG"
   NEW_CONFIG=yes
+fi
+
+# The group has to exist before this can work, and a `|| true` on the chown hid
+# that it did not: the file stayed root:root 0640 and the service could not read
+# its own configuration, which surfaces as "permission denied" on a path that
+# plainly exists.
+#
+# Re-applied on EVERY run rather than only when the file is written, so that an
+# installation left in that state is repaired by installing again.
+if [ -f "$CONFIG" ]; then
+  chown "root:$SERVICE_USER" "$CONFIG" || warn "cannot give $SERVICE_USER read access to $CONFIG"
+  chmod 0640 "$CONFIG"
+fi
+if [ -f "$ENVFILE" ]; then
+  chown "root:$SERVICE_USER" "$ENVFILE" 2>/dev/null || true
+  chmod 0640 "$ENVFILE"
 fi
 
 if [ -f "$ENVFILE" ]; then
