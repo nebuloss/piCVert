@@ -325,3 +325,54 @@ func TestUpgradePassesNonObjectsThrough(t *testing.T) {
 		}
 	}
 }
+
+// An embedded portrait is refused, and the message says what to do instead.
+//
+// This is the shape a CV exported from another tool arrives in, and it is a
+// trap: the page renders perfectly, because drawing one inlines the portrait
+// as a data URI anyway and passes an existing one straight through. Nothing
+// fails until the first save, long after the cause would have been obvious.
+//
+// The generic length error it used to give — "too long (269166 characters, 200
+// maximum)" — is true and useless. Nobody reading it would guess that the fix
+// is to write the image to a file beside cv.json.
+func TestAnEmbeddedPortraitIsRefusedByName(t *testing.T) {
+	doc := map[string]any{
+		"meta": map[string]any{"lang": "en"},
+		"content": map[string]any{
+			"identity": map[string]any{
+				"name": "Jean Dupont",
+				// Long enough to trip the length check too, so this proves the
+				// order of the two: the specific message must win.
+				"photo": "data:image/png;base64," + strings.Repeat("A", 4000),
+			},
+			"sections": []any{},
+		},
+	}
+	_, err := Validate(doc)
+	if err == nil {
+		t.Fatal("an embedded portrait was accepted — it cannot be saved later")
+	}
+	if strings.Contains(err.Error(), "too long") {
+		t.Fatalf("the generic length error won: %v", err)
+	}
+	for _, wanted := range []string{"beside cv.json", "photo.png"} {
+		if !strings.Contains(err.Error(), wanted) {
+			t.Fatalf("the message does not say what to do (%q): %v", wanted, err)
+		}
+	}
+}
+
+// A plain file name is still what a portrait looks like.
+func TestAPortraitFileNameIsAccepted(t *testing.T) {
+	doc := map[string]any{
+		"meta": map[string]any{"lang": "en"},
+		"content": map[string]any{
+			"identity": map[string]any{"name": "Jean Dupont", "photo": "photo.png"},
+			"sections": []any{},
+		},
+	}
+	if _, err := Validate(doc); err != nil {
+		t.Fatalf("a normal portrait was refused: %v", err)
+	}
+}

@@ -171,6 +171,25 @@ func checkPhoto(f fields.Field, v any, present bool, p string) error {
 	if f.Max != nil {
 		max = *f.Max
 	}
+	// An embedded image, caught BEFORE the length check, because otherwise it
+	// reports "too long (269166 characters, 200 maximum)" — true, useless, and
+	// not what anybody would guess from it.
+	//
+	// This is the shape a CV exported from somewhere else arrives in, and it
+	// is a trap worth naming: the page renders perfectly, because drawing one
+	// inlines the portrait as a data URI anyway and passes an existing one
+	// straight through. Nothing goes wrong until the first save, which is long
+	// after the point where the cause would have been obvious.
+	//
+	// Why it is refused rather than accepted: the whole document is rewritten
+	// on every save and sent over the wire on every preview. Measured on a
+	// real 200 kB portrait, carrying it inside the document makes a save
+	// thirteen times slower and a fortnight of ordinary edits weigh megabytes
+	// instead of kilobytes, because base64 does not compress.
+	if text, ok := v.(string); ok && strings.HasPrefix(strings.ToLower(text), "data:") {
+		return fail(p, "must be a file beside cv.json, not an embedded image.\n"+
+			"Write the image to the profile folder and name it here, e.g. \"photo.png\"")
+	}
 	// Deliberately NOT carrying `required` across: a photo field left empty is
 	// a CV without a portrait, which is a choice rather than an error.
 	if err := checkText(fields.Field{Kind: fields.KindText, Key: f.Key, Label: f.Label, Max: &max}, v, present, p); err != nil {
