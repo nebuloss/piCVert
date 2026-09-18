@@ -193,3 +193,94 @@ func TestPrintingDoesNotStore(t *testing.T) {
 		t.Fatal("--print wrote a password file")
 	}
 }
+
+// Saving a password that something else would override must FAIL.
+//
+// This is written from a real report: the password was changed, the service
+// was restarted, and the login form still refused it. The command had said
+// "Saved in ...", then "it takes effect on restart", and exited 0 — while
+// admin.password in the configuration file went on winning. Everything
+// reported success and the password did not change.
+//
+// A warning was not enough. It was printed between two lines that both read as
+// success, and nothing that reads an exit status could see it at all.
+func TestSavingAPasswordThatWouldBeIgnoredIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	existing, err := config.Hash("the one already configured")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "picvert.yaml")
+	body := "data-dir: \"" + dir + "\"\nadmin:\n  password: \"" + existing + "\"\n"
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PICVERT_CONFIG", file)
+	t.Setenv("PICVERT_DATA", dir)
+	t.Setenv("PICVERT_ADMIN_PASSWORD", "")
+
+	err = hashPipedArgs(t, "a long enough password", "--stdin")
+	if err == nil {
+		t.Fatal("saving succeeded while the configuration file went on winning — " +
+			"the password appears changed and is not")
+	}
+	// The message has to name the file, because the next question is always
+	// "which file, and which line".
+	if !strings.Contains(err.Error(), file) {
+		t.Fatalf("the message does not name the file to edit: %v", err)
+	}
+
+	// And nothing was written, so the state is not half-changed.
+	if got := config.ReadPasswordFile(dir); got != "" {
+		t.Fatal("it refused and stored the password anyway")
+	}
+}
+
+// The same for the environment, which wins over both.
+func TestSavingIsRefusedWhenTheEnvironmentWins(t *testing.T) {
+	dir := t.TempDir()
+	injected, _ := config.Hash("the injected one")
+	t.Setenv("PICVERT_CONFIG", "")
+	t.Setenv("PICVERT_DATA", dir)
+	t.Setenv("PICVERT_ADMIN_PASSWORD", injected)
+
+	err := hashPipedArgs(t, "a long enough password", "--stdin")
+	if err == nil {
+		t.Fatal("saving succeeded while PICVERT_ADMIN_PASSWORD went on winning")
+	}
+	if !strings.Contains(err.Error(), "PICVERT_ADMIN_PASSWORD") {
+		t.Fatalf("the message does not name what is winning: %v", err)
+	}
+}
+
+// --print still works in that situation: it is how you generate the hash to
+// put INTO the file that is winning, so refusing it would leave no way out.
+func TestPrintingStillWorksWhenSomethingElseWins(t *testing.T) {
+	dir := t.TempDir()
+	injected, _ := config.Hash("the injected one")
+	t.Setenv("PICVERT_DATA", dir)
+	t.Setenv("PICVERT_ADMIN_PASSWORD", injected)
+
+	if err := hashPipedArgs(t, "a long enough password", "--stdin", "--print"); err != nil {
+		t.Fatalf("--print was refused, leaving no way to manage the password: %v", err)
+	}
+}
+
+// And with nothing shadowing it, saving works as before.
+func TestSavingWorksWhenNothingElseIsSet(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "picvert.yaml")
+	if err := os.WriteFile(file, []byte("data-dir: \""+dir+"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PICVERT_CONFIG", file)
+	t.Setenv("PICVERT_DATA", dir)
+	t.Setenv("PICVERT_ADMIN_PASSWORD", "")
+
+	if err := hashPipedArgs(t, "a long enough password", "--stdin"); err != nil {
+		t.Fatalf("saving was refused with nothing in the way: %v", err)
+	}
+	if !config.Verify(config.ReadPasswordFile(dir), "a long enough password") {
+		t.Fatal("the password was not stored")
+	}
+}
