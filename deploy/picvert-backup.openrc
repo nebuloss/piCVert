@@ -9,19 +9,24 @@
 # filling up on a schedule, which takes the service down with it and is a worse
 # failure than having no backup at all.
 #
-# # TWO THINGS THAT BOTH LOOK LIKE NOTHING
+# # THREE THINGS THAT EACH LOOK LIKE NOTHING
 #
-# The output is NAMED rather than reached by changing directory first. Changing
-# directory meant the command looked for the CVs relative to where it was
-# writing, and reported "no data directory" at a path inside the backups folder.
+# The date is worked out HERE, before `su`, not inside the quoted command it
+# runs. Nested quoting put a literal `$(date +%Y-%m-%d)` in the filename, and
+# the backup succeeded — which is the worst way for this to go wrong, because
+# every night would overwrite one file with that name and rotation would keep
+# fourteen copies of nothing.
 #
-# And it starts in a directory the service account can read. `su` leaves the
-# working directory where it was — root's, usually — and the first thing the
-# command does is resolve a relative path, which fails with "stat .: permission
-# denied" and names nothing that would lead anybody to this line.
+# The working directory is set, because `su` keeps the one it was called from —
+# root's, for a cron job — and the command resolves a relative path as its first
+# act. That fails with "stat .: permission denied", which names nothing.
+#
+# And the output is named rather than reached by changing directory to it: the
+# command reads its configuration for where the CVs are, so changing directory
+# first made it look for them inside the backups folder.
 set -eu
 
 DATA=/var/lib/picvert
-exec su picvert -s /bin/sh -c \
-  "cd '$DATA' && exec /opt/picvert/picvert backup \
-     --out '$DATA/backups/picvert-\$(date +%Y-%m-%d).tar.gz' --keep 14"
+OUT="$DATA/backups/picvert-$(date +%Y-%m-%d).tar.gz"
+
+exec su picvert -s /bin/sh -c "cd '$DATA' && exec /opt/picvert/picvert backup --out '$OUT' --keep 14"
