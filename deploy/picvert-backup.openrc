@@ -8,6 +8,11 @@
 # --keep is what makes it unattended: without it a nightly backup is a disk
 # filling up on a schedule, which takes the service down with it and is a worse
 # failure than having no backup at all.
+#
+# --out rather than a working directory. Changing directory first meant the
+# backup looked for the CVs relative to where it was writing, and reported "no
+# data directory at .../backups/data" — the command reads its configuration for
+# where the CVs are, and that path is absolute.
 set -eu
-cd /var/lib/picvert/backups
-exec su picvert -s /bin/sh -c '/opt/picvert/picvert backup --keep 14'
+exec su picvert -s /bin/sh -c \
+  '/opt/picvert/picvert backup --out "/var/lib/picvert/backups/picvert-$(date +%Y-%m-%d).tar.gz" --keep 14'
