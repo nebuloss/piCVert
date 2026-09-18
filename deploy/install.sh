@@ -234,6 +234,16 @@ fi
 if [ -f "$CONFIG" ]; then
   chown "root:$SERVICE_USER" "$CONFIG" || warn "cannot give $SERVICE_USER read access to $CONFIG"
   chmod 0640 "$CONFIG"
+
+  # The data directory, pointed at where this installation actually put it.
+  #
+  # The example ships a default that is right for the usual prefix, and this is
+  # what makes it right when somebody moved it — and what stops `picvert new`
+  # writing a CV somewhere the service never reads. That happened: the CV was
+  # created, the command printed links, and nothing served them.
+  if grep -q '^data-dir:' "$CONFIG"; then
+    sed -i "s|^data-dir:.*|data-dir: \"$DATA/data\"|" "$CONFIG" 2>/dev/null || true
+  fi
 fi
 if [ -f "$ENVFILE" ]; then
   chown "root:$SERVICE_USER" "$ENVFILE" 2>/dev/null || true

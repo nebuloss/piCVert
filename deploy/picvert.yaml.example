@@ -156,8 +156,15 @@ security:
   # Who may show these pages in an iframe.
   frame-ancestors: "'self'"
 
+# Where the CVs live. The one directory worth backing up.
+#
+# NOT commented out, and that matters: `picvert new` and `picvert backup` read
+# this file and nothing else, so leaving it to a default put a CV made from the
+# command line somewhere the service does not read and the backups do not
+# cover. It looked like it had worked.
+data-dir: "/var/lib/picvert/data"
+
 # Only needed when running from a checkout. An installed binary carries the
 # templates, the fonts and the whole interface.
 # home: "/opt/picvert"
-# data-dir: "/var/lib/picvert/data"
 # template: "material-you"
