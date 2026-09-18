@@ -225,15 +225,6 @@ func (h *History) List(p *profiles.Profile, limit int, lang string, filterLang b
 // Size is how many entries a CV carries, all languages together.
 func (h *History) Size(p *profiles.Profile) int { return len(h.load(p)) }
 
-// Clear drops the journal, for a CV emptied of its past on purpose.
-func (h *History) Clear(p *profiles.Profile) error {
-	err := os.Remove(h.fileFor(p))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
-}
-
 // --- episodes ---------------------------------------------------------------
 
 // episodeOf is the index of the entry this change belongs to, or -1.

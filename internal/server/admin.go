@@ -143,6 +143,14 @@ func (s *Server) AdminHandler() http.Handler {
 	// on the page the administrator already has open — see internal/metrics for
 	// why each number is there.
 	mux.HandleFunc("GET /api/metrics", func(w http.ResponseWriter, r *http.Request) {
+		// Read from disk, not from a counter. Backups are taken by a separate
+		// process — a timer, or busybox cron — so the serving process never
+		// sees one happen and a counter it keeps itself can only say "none".
+		// It said exactly that, permanently, on machines backing themselves up
+		// every night.
+		if at, ok := lastBackupAt(s.Profiles.DataDir()); ok {
+			s.Metrics.Backup(at)
+		}
 		snapshot := s.Metrics.Snapshot()
 		profiles := s.Profiles.List()
 		var bytes int64
@@ -224,6 +232,33 @@ func publicPort(listen string) string {
 		return port
 	}
 	return "3000"
+}
+
+// lastBackupAt is when the newest backup was written, read from the directory
+// the timer writes into.
+//
+// A sibling of the data directory, which is where both deploy/picvert-backup
+// units put them. Nothing is configured here on purpose: a path that could
+// disagree with the unit file is a path that will.
+func lastBackupAt(dataDir string) (time.Time, bool) {
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(dataDir), "backups"))
+	if err != nil {
+		return time.Time{}, false
+	}
+	var newest time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".tar.gz") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+	}
+	return newest, !newest.IsZero()
 }
 
 // --- the inventory ----------------------------------------------------------

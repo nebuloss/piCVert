@@ -313,36 +313,6 @@ func polygonVertices(sides int, rotate float64) []float64 {
 	return out
 }
 
-func polygonPoints(sides int, rotate float64) string {
-	if sides < 3 {
-		sides = 6
-	}
-	xs := make([]float64, sides)
-	ys := make([]float64, sides)
-	minX, maxX := math.Inf(1), math.Inf(-1)
-	minY, maxY := math.Inf(1), math.Inf(-1)
-	for i := 0; i < sides; i++ {
-		// Start at the top: the orientation anyone drawing one by hand would
-		// choose, rather than the one the maths gives.
-		angle := (float64(i)/float64(sides))*2*math.Pi - math.Pi/2 + rotate*math.Pi/180
-		xs[i] = math.Cos(angle)
-		ys[i] = math.Sin(angle)
-		minX, maxX = math.Min(minX, xs[i]), math.Max(maxX, xs[i])
-		minY, maxY = math.Min(minY, ys[i]), math.Max(maxY, ys[i])
-	}
-
-	var b strings.Builder
-	for i := 0; i < sides; i++ {
-		x := (xs[i] - minX) / (maxX - minX) * 100
-		y := (ys[i] - minY) / (maxY - minY) * 100
-		if i > 0 {
-			b.WriteByte(' ')
-		}
-		fmt.Fprintf(&b, "%s,%s", num(x), num(y))
-	}
-	return b.String()
-}
-
 // Text places each measured line at its own baseline.
 //
 // `white-space:pre` because the spacing inside a line was already measured:

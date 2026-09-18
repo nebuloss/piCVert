@@ -35,7 +35,6 @@ import (
 	"strings"
 	"time"
 
-	"picvert/internal/access"
 	"picvert/internal/config"
 	"picvert/internal/document"
 	"picvert/internal/engine"
@@ -62,7 +61,6 @@ type Server struct {
 	Store    *store.Store
 	History  *store.History
 	Tokens   *tokens.Store
-	Access   *access.Policy
 	Guard    *security.Guard
 	Registry *templates.Registry
 	// Leases grant one editor at a time. See lease.go.
@@ -116,7 +114,6 @@ func New(home string, cfg config.Config, version string) (*Server, error) {
 		Store:     store.New(repo, e.Registry, history),
 		History:   history,
 		Tokens:    tokens.New(repo),
-		Access:    access.New(),
 		Guard:     security.New(),
 		Registry:  e.Registry,
 		Leases:    leases,
@@ -192,6 +189,12 @@ func (s *Server) pdf(p *profiles.Profile, lang string) ([]byte, error) {
 // “something went wrong” tells them nothing they can act on. Nothing here ever
 // reveals whether a profile EXISTS, which is a different question — that is
 // settled before a handler is reached.
+// fail answers with a status and an explanation, and counts it.
+//
+// A free function rather than a method, so it cannot reach the metrics — which
+// is why "errors" and "conflicts" sat at zero on the administration page while
+// being displayed there. The server now counts them on the way past; see
+// (*Server).fail.
 func fail(w http.ResponseWriter, status int, err error) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	security.NoCache(w)

@@ -93,7 +93,7 @@ func (s *Server) publicNew(w http.ResponseWriter, r *http.Request) {
 		body.Template, strings.TrimSpace(body.Lang)); err != nil {
 		// A name already taken is the common case and is not a failure of the
 		// challenge, so it does not count against the address.
-		fail(w, statusFor(err), err)
+		fail(w, s.statusFor(err), err)
 		return
 	}
 	s.Guard.RecordSuccess(ip)

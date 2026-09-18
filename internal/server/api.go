@@ -292,7 +292,7 @@ func (s *Server) write(apply func(*http.Request, *profiles.Profile, any) (docume
 		}
 		doc, err := apply(r, p, body)
 		if err != nil {
-			fail(w, statusFor(err), err)
+			fail(w, s.statusFor(err), err)
 			return
 		}
 		s.saved(w, p, r, doc)
@@ -306,6 +306,20 @@ func (s *Server) write(apply func(*http.Request, *profiles.Profile, any) (docume
 // a 409 means somebody else got there first and the person has a choice to
 // make. Answering 400 for both would have the editor retrying a save that can
 // never succeed.
+func (s *Server) statusFor(err error) int {
+	status := statusFor(err)
+	// Counted where the failure is already being classified, rather than in
+	// `fail`, which is a free function called from fifty places and cannot
+	// reach the metrics. That is why the administration page displayed
+	// "0 conflicts, 0 errors" however much went wrong.
+	if status == http.StatusConflict {
+		s.Metrics.Conflict()
+	} else {
+		s.Metrics.Error()
+	}
+	return status
+}
+
 func statusFor(err error) int {
 	if errors.Is(err, store.ErrConflict) {
 		return http.StatusConflict
@@ -330,7 +344,7 @@ func (s *Server) patch(apply func(*http.Request, *profiles.Profile, map[string]a
 		}
 		doc, err := apply(r, p, patch)
 		if err != nil {
-			fail(w, statusFor(err), err)
+			fail(w, s.statusFor(err), err)
 			return
 		}
 		s.saved(w, p, r, doc)
@@ -356,6 +370,11 @@ func (s *Server) patch(apply func(*http.Request, *profiles.Profile, map[string]a
 // before its next save, or send the revision it started from and conflict with
 // itself.
 func (s *Server) saved(w http.ResponseWriter, p *profiles.Profile, r *http.Request, doc document.Doc) {
+	// Counted HERE because every write ends here — a save, a field edit, a
+	// portrait, a new language. Counting at each call site instead is how the
+	// administration page came to report zero saves forever: the counters
+	// existed, the page displayed them, and nothing ever incremented them.
+	s.Metrics.Save()
 	s.forget(p)
 	s.tagRevision(w, p.Slug, lang(r))
 	sendJSON(w, map[string]any{"ok": true, "doc": doc})

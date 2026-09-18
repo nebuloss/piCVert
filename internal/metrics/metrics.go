@@ -96,10 +96,23 @@ func (m *Metrics) Render(took time.Duration) {
 }
 
 // Backup records that one was taken.
+//
+// # WHY THIS IS SET FROM OUTSIDE AND NOT COUNTED IN HERE
+//
+// Backups are taken by a SEPARATE PROCESS — a systemd timer, or busybox cron
+// running /etc/periodic/daily. The serving process never sees one happen, so a
+// counter it increments itself can only ever say "none", which is exactly what
+// the administration page reported: a standing warning that no backup had been
+// taken, on a machine backing itself up every night.
+//
+// The honest answer is on disk, in the backups directory, and the server reads
+// it there. This remains for a caller that genuinely knows.
 func (m *Metrics) Backup(at time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.lastBackup = at
+	if at.After(m.lastBackup) {
+		m.lastBackup = at
+	}
 }
 
 // Snapshot is the numbers at one moment, for the admin page.

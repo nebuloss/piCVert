@@ -188,13 +188,6 @@ func (r *Registry) Source() string {
 	return r.Dir
 }
 
-// Reload drops the cache, for a template added without a restart.
-func (r *Registry) Reload() {
-	r.mu.Lock()
-	r.cache = nil
-	r.mu.Unlock()
-}
-
 // All is every template, by title.
 func (r *Registry) All() ([]*Template, error) {
 	r.mu.Lock()

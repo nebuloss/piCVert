@@ -175,8 +175,18 @@ func TestBeingTheDefaultProfileDoesNotPublishIt(t *testing.T) {
 	if s.Profiles.Default() == nil {
 		t.Fatal("no default profile at all")
 	}
-	if s.Access.IsPublic(slug) {
+	// Asked of the configuration, which is what the server actually consults.
+	// This used to ask a second implementation of the same rule, in a package
+	// nothing else referenced — so one of the two stated acceptance criteria
+	// of this service was being checked against code that never ran.
+	if s.Config.IsPublic(slug) {
 		t.Fatal("the default profile is public without being named")
+	}
+	// And the route agrees, which is the part that matters: a rule that holds
+	// in a function while the address serves the CV anyway is not a rule.
+	h := s.Handler()
+	if w := call(t, h, "GET", "/p/"+slug+"/cv.html", nil, nil); w.Code == http.StatusOK {
+		t.Fatal("the default profile is readable at a guessable address")
 	}
 }
 
