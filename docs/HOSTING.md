@@ -132,42 +132,51 @@ nobody could reach it, and binding it wider removes exactly that.
 To change it:
 
 ```sh
-sudo picvert passwd --write     # asks twice, echoes nothing, saves it
+sudo picvert passwd             # asks twice, echoes nothing, saves it
 sudo systemctl restart picvert  # or: rc-service picvert restart
 ```
 
-`--write` edits `admin.password` and nothing else. It replaces that one line,
-keeps every comment and every other setting byte for byte, and leaves the
-previous file beside it as `picvert.yaml.bak`. It writes the file in place
-rather than replacing it, because `/etc/picvert.yaml` is `root:picvert 0640` —
-owned by root so the service cannot edit it, group-readable so the service can
-read it. A file created fresh and renamed over the target would be `root:root`,
-and the service would no longer be able to read its own configuration.
+That is the whole of it. There is nothing to copy and nowhere to paste it
+wrong.
 
-The hash is not printed in this mode: the point of the flag is that the
-credential never has to be carried anywhere by hand, and printing it would put
-it in the terminal scrollback.
+The password is stored with the CVs, in `.admin-password` beside the data
+directory — not in `picvert.yaml`. A generated PBKDF2 hash is not really
+configuration: nobody writes one by hand, nobody reviews one in a diff, and
+nobody wants it in the file they paste into a bug report. It belongs with the
+other generated secret this service keeps, `.share-tokens.json`, and it is
+written mode 0600 and owned by the service account for the same reasons.
 
-Without `--write` it prints the hash instead, for pasting into a file it does
-not manage:
-
-```sh
-picvert passwd                  # prints a hash
-sudo -e /etc/picvert.yaml       # put it in admin.password
-```
+That is also what keeps `picvert.yaml` honest: this program never writes it, so
+your comments and your ordering survive exactly as you left them.
 
 Without a terminal — over `ssh host picvert passwd`, or from a script — pipe it
-instead. The two flags combine:
+in:
 
 ```sh
-printf '%s\n' 'the new password' | sudo picvert passwd --stdin --write
+printf '%s\n' 'the new password' | sudo picvert passwd --stdin
 ```
 
 Never as an argument: an argument is in the shell history, in the process list,
 and in the logs of anything watching either.
 
-Either way it takes effect on restart, and that restart signs out everyone
-currently signed in.
+### When the configuration file is generated for you
+
+If `picvert.yaml` comes out of Ansible, a Nix module or anything else that
+templates a hash in, set `admin.password` there and it wins over anything
+`picvert passwd` stored — so a hash under version control is never quietly
+replaced by one generated on the machine. `--print` produces one to template:
+
+```sh
+picvert passwd --print          # writes the hash to stdout, stores nothing
+```
+
+The order, highest first: `PICVERT_ADMIN_PASSWORD`, then `admin.password` in
+the file, then what `picvert passwd` stored. When the first two would shadow
+what it just saved, `picvert passwd` says so rather than leaving you with a new
+password that appears not to work.
+
+It takes effect on restart, and that restart signs out everyone currently
+signed in.
 
 ### The length floor, and turning it off
 

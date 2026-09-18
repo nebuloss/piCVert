@@ -124,7 +124,10 @@ func TestAPasswordIsHashedWithNoConfigurationAtAll(t *testing.T) {
 // hashPiped runs `passwd --stdin` with a password on standard input.
 func hashPiped(t *testing.T, password string) error {
 	t.Helper()
-	return hashPipedArgs(t, password, "--stdin")
+	// --print, because these exercise the reading and the floor rather than
+	// the storing. Without it every one of them would write a password file
+	// into whatever this machine's data directory turns out to be.
+	return hashPipedArgs(t, password, "--stdin", "--print")
 }
 
 // hashPipedArgs is the same with the flags spelled out.
@@ -146,7 +149,47 @@ func hashPipedArgs(t *testing.T, password string, args ...string) error {
 	return passwdCmd(args)
 }
 
-// hashPipedConfig reloads a configuration file, to prove it still parses.
-func hashPipedConfig(path string) (config.Config, error) {
-	return config.Load(path)
+// End to end: set a password, and find the service using it.
+//
+// The four-step version of this — hash, copy, paste, restart — is what the
+// stored file replaced, and a test that only checks the hashing would have
+// passed throughout the time the copy-paste was the thing going wrong.
+func TestSettingAPasswordIsOneStep(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PICVERT_DATA", dir)
+	t.Setenv("PICVERT_CONFIG", "")
+	t.Setenv("PICVERT_ADMIN_PASSWORD", "")
+
+	if err := hashPipedArgs(t, "a long enough password", "--stdin"); err != nil {
+		t.Fatalf("setting the password failed: %v", err)
+	}
+
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Admin.Password == "" {
+		t.Fatal("the password was not picked up by the service's own loader")
+	}
+	if !config.Verify(cfg.Admin.Password, "a long enough password") {
+		t.Fatal("the stored password is not the one that was set")
+	}
+}
+
+// --print stores nothing.
+//
+// It exists for templating the value into a configuration managed elsewhere,
+// and a flag that printed AND stored would leave a credential on a machine
+// that was only ever asked to compute one.
+func TestPrintingDoesNotStore(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PICVERT_DATA", dir)
+	t.Setenv("PICVERT_CONFIG", "")
+
+	if err := hashPipedArgs(t, "a long enough password", "--stdin", "--print"); err != nil {
+		t.Fatal(err)
+	}
+	if got := config.ReadPasswordFile(dir); got != "" {
+		t.Fatal("--print wrote a password file")
+	}
 }

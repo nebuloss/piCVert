@@ -212,27 +212,38 @@ else
   # before anything will start. Generated here rather than demanded, so that
   # installing stays one command and the safe path is the automatic one.
   #
-  # Printed ONCE. Nothing stores it in a form anybody can read back — what goes
-  # in the file is a hash — so this line is the only time it exists.
+  # Printed ONCE. Nothing stores it in a form anybody can read back — what is
+  # stored is a hash — so this line is the only time it exists.
   ADMIN_PASSWORD=$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | cut -c1-24)
-  ADMIN_HASH=$(printf '%s\n' "$ADMIN_PASSWORD" | "$PREFIX/picvert" passwd --stdin 2>/dev/null)
-  if [ -n "$ADMIN_HASH" ]; then
-    # Into the `password: ""` line the example already carries, NOT appended.
-    # Appending produced a second `admin:` key and a file YAML refuses to
-    # parse — found by rehearsing the install rather than by reading it.
-    #
-    # The hash contains `$` and `/`, so `|` is the delimiter and the
-    # replacement goes through a shell variable rather than being interpolated
-    # into the pattern.
-    awk -v hash="$ADMIN_HASH" '
-      !done && /^  password: ""$/ { print "  password: \"" hash "\""; done = 1; next }
-      { print }
-    ' "$CONFIG" > "$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
-    if grep -q "$ADMIN_HASH" "$CONFIG"; then
-      GENERATED_PASSWORD=$ADMIN_PASSWORD
-    else
-      warn "could not write the administration password into $CONFIG"
-    fi
+
+  # Stored by picvert itself, beside the CVs — not written into the
+  # configuration file.
+  #
+  # This used to rewrite `password: ""` in $CONFIG with awk, which worked and
+  # was the wrong shape: it made the installer the second thing that edits a
+  # file the program itself promises never to touch, and it had already had to
+  # learn not to append (a second `admin:` key, and a file YAML refuses to
+  # parse) and to use `|` as the delimiter (the hash contains `$` and `/`).
+  # None of that is needed to store a credential where credentials go.
+  #
+  # PICVERT_DATA is passed explicitly, and that is not belt-and-braces: the
+  # `data-dir` line of $CONFIG is not rewritten until further down this script,
+  # so at this moment the file still says whatever the shipped example says.
+  # Letting the binary work it out from the config put the password under
+  # /var/lib/picvert on a machine installing somewhere else entirely, where it
+  # silently failed and the service came up with no password at all.
+  #
+  # The installer knows where the data is — it created and chowned it thirty
+  # lines ago — so it says so rather than asking.
+  if ! stored=$(printf '%s\n' "$ADMIN_PASSWORD" |
+       PICVERT_CONFIG="$CONFIG" PICVERT_DATA="$DATA/data" \
+       "$PREFIX/picvert" passwd --stdin 2>&1 >/dev/null); then
+    # Shown, not swallowed. This failing means the administration port comes up
+    # with no password on it, which is the one outcome nobody must find out
+    # about later.
+    warn "could not store the administration password: $stored"
+  else
+    GENERATED_PASSWORD=$ADMIN_PASSWORD
   fi
 
   chmod 0640 "$CONFIG"
@@ -390,7 +401,7 @@ if [ -n "${GENERATED_PASSWORD:-}" ]; then
 │   $GENERATED_PASSWORD
 │
 │  Written down nowhere else: $CONFIG holds only a hash of it.
-│  Change it with: picvert passwd --write
+│  Change it with: picvert passwd
 └───────────────────────────────────────────────────────────────────────
 EOF
 fi

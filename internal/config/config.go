@@ -47,6 +47,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -306,7 +307,37 @@ func Load(path string) (Config, error) {
 	}
 
 	c.overrideFromEnv()
+
+	// The stored password fills in only what nothing else set, so the
+	// precedence reads the way every other setting here does:
+	//
+	//   PICVERT_ADMIN_PASSWORD   the deployment
+	//   admin.password           the file a person wrote
+	//   .admin-password          what `picvert passwd` last stored
+	//
+	// Last rather than first because a hash generated months ago must not
+	// quietly override the one somebody has just templated into the config.
+	// `picvert passwd` says so when it is about to be shadowed, rather than
+	// leaving a new password that appears not to work.
+	if c.Admin.Password == "" {
+		c.Admin.Password = ReadPasswordFile(c.ResolvedDataDir())
+	}
+
 	return c, c.check()
+}
+
+// ResolvedDataDir is where the CVs actually are, defaults applied.
+//
+// Stated once because three places need it and each deriving it separately is
+// three chances to disagree about where this service keeps its data.
+func (c Config) ResolvedDataDir() string {
+	if c.DataDir != "" {
+		return c.DataDir
+	}
+	if c.Home != "" {
+		return filepath.Join(c.Home, "data")
+	}
+	return "data"
 }
 
 // overrideFromEnv lets the environment win.

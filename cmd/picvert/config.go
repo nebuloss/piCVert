@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"golang.org/x/term"
+	"gopkg.in/yaml.v3"
 	"picvert/internal/config"
 )
 
@@ -49,7 +50,7 @@ func loadConfig() (config.Config, error) {
 func passwdCmd(args []string) error {
 	fs := flag.NewFlagSet("passwd", flag.ExitOnError)
 	stdin := fs.Bool("stdin", false, "read the password from standard input")
-	write := fs.Bool("write", false, "save it into the configuration file")
+	print_ := fs.Bool("print", false, "print the hash instead of saving it")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -125,56 +126,63 @@ func passwdCmd(args []string) error {
 			"\nNote: admin.min-password-length is 0, so nothing was checked.")
 	}
 
-	if *write {
-		return writePassword(hash)
+	if *print_ {
+		// To stdout alone, so it can be piped, while the prompts went to
+		// stderr. For templating the value into a configuration managed
+		// somewhere else.
+		fmt.Println(hash)
+		return nil
 	}
 
-	// To stdout alone, so it can be piped, while the prompts went to stderr.
-	fmt.Println(hash)
-	fmt.Fprintln(os.Stderr, "\nPut that in your configuration:\n\nadmin:\n  password: \""+hash+"\"")
-	fmt.Fprintln(os.Stderr, "Or let picvert do it: picvert passwd --write")
-	return nil
-}
-
-// writePassword saves the hash into the configuration file.
-//
-// The hash is NOT printed in this mode. Printing it would put the credential
-// into the terminal scrollback and the shell's log of a session that had no
-// need to see it — the whole point of this flag is that it never has to be
-// carried anywhere by hand.
-func writePassword(hash string) error {
-	path := configPath()
-	if path == "" {
-		return fmt.Errorf("there is no configuration file to write to.\n\n" +
-			"Create one from deploy/picvert.yaml.example, or say where it is:\n\n" +
-			"  PICVERT_CONFIG=/etc/picvert.yaml picvert passwd --write")
-	}
-	source, err := os.ReadFile(path)
+	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
-	if err := writeInPlace(path, setScalar(source, "admin", "password", hash)); err != nil {
+	file, err := config.WritePasswordFile(cfg.ResolvedDataDir(), hash)
+	if err != nil {
 		return err
 	}
+	fmt.Fprintf(os.Stderr, "Saved in %s\n", file)
 
-	// Re-read it rather than trust the edit. This is the file the service will
-	// refuse to start on if it is wrong, and the moment to find that out is now
-	// — while the .bak beside it is still the file that worked.
-	cfg, err := config.Load(path)
-	if err != nil {
-		return fmt.Errorf("%s no longer parses — put %s.bak back: %w", path, path, err)
-	}
-	if cfg.Admin.Password != hash {
-		return fmt.Errorf("%s was written but does not read back with the new "+
-			"password.\nSomething else is setting it — PICVERT_ADMIN_PASSWORD in "+
-			"the environment overrides the file", path)
+	// The two ways a password that was just set can still not be the password.
+	// Both are silent otherwise: you would type the new one at the login form,
+	// be refused, and have nothing at all to go on.
+	if env := strings.TrimSpace(os.Getenv("PICVERT_ADMIN_PASSWORD")); env != "" {
+		fmt.Fprintln(os.Stderr,
+			"\nBut PICVERT_ADMIN_PASSWORD is set in this environment and wins over\n"+
+				"what was just saved. Unset it, or change it there instead.")
+	} else if fromFile := configuredPassword(); fromFile != "" && fromFile != hash {
+		fmt.Fprintf(os.Stderr,
+			"\nBut admin.password is set in %s and wins over what was just saved.\n"+
+				"Remove that line to use this password.\n", configPath())
 	}
 
-	fmt.Fprintf(os.Stderr, "Saved in %s (previous kept as %s.bak).\n", path, path)
-	fmt.Fprintln(os.Stderr, "It takes effect on restart:\n\n"+
+	fmt.Fprintln(os.Stderr, "\nIt takes effect on restart:\n\n"+
 		"  systemctl restart picvert     # or: rc-service picvert restart\n\n"+
 		"Everyone signed in now is signed out by that restart.")
 	return nil
+}
+
+// configuredPassword is admin.password as the FILE gives it, ignoring the
+// stored one — which is the only way to tell whether the file would shadow it.
+func configuredPassword() string {
+	path := configPath()
+	if path == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var probe struct {
+		Admin struct {
+			Password string `yaml:"password"`
+		} `yaml:"admin"`
+	}
+	if yaml.Unmarshal(raw, &probe) != nil {
+		return ""
+	}
+	return probe.Admin.Password
 }
 
 // configCmd prints what the service would be told, and where from.
