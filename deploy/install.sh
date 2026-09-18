@@ -424,7 +424,8 @@ if [ -n "${GENERATED_PASSWORD:-}" ]; then
 │
 │   $GENERATED_PASSWORD
 │
-│  Written down nowhere else: $CONFIG holds only a hash of it.
+│  Written down nowhere else, and only a hash of it is stored.
+│  It stays on THIS machine: backups carry the CVs, not the login.
 │  Change it with: picvert passwd
 └───────────────────────────────────────────────────────────────────────
 EOF

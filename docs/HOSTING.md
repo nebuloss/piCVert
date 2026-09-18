@@ -352,10 +352,28 @@ picvert backup --keep 14            # and remove all but the newest fourteen
 picvert restore --from <file>       # put one back
 ```
 
-A backup holds every CV — documents, portraits, journals — **and the link
-file**, without which a restored service is one nobody can open. It does not
-hold the trash: that is what somebody asked to be rid of, and restoring it
-would undo a deletion they meant.
+A backup holds every CV: documents, portraits, journals **and the links each CV
+is reached by**, which live in the CV's own folder — without them a restored
+service is one nobody can open.
+
+It does not hold the trash: that is what somebody asked to be rid of, and
+restoring it would undo a deletion they meant.
+
+It does not hold the **administration password** either, and that is
+deliberate. A backup is told to leave the machine, so a credential riding along
+is a credential in every copy of it. And restoring used to overwrite the
+password silently: a fresh install prints one once, saying it is written down
+nowhere else, and restoring the old machine's CVs then replaced it — so the
+password on the printout was refused and the one that worked belonged to a
+machine you may no longer have.
+
+So **migrating carries the CVs, not the login.** The new machine keeps the
+password its own installer gave it. If you would rather choose one:
+
+```sh
+sudo picvert passwd
+sudo systemctl restart picvert     # or: rc-service picvert restart
+```
 
 `restore` **refuses a data directory that already holds CVs**, and that refusal
 is the feature. Restoring happens in a hurry on a bad day, and merging an old

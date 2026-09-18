@@ -1,8 +1,12 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -128,5 +132,148 @@ func TestBackupStillWorksWithABrokenConfiguration(t *testing.T) {
 
 	if got := configuredDataDir(); got != dir {
 		t.Fatalf("a broken configuration changed the answer: %q", got)
+	}
+}
+
+// A backup carries the CVs, not this machine's administration password.
+//
+// Two measured failures, both of which this prevents:
+//
+// The nightly backup leaves the machine — the installer says "Copy them
+// somewhere that is not this machine" — so a credential riding along is a
+// credential in every copy of every backup.
+//
+// And restoring clobbered a password nobody knew. A fresh install generates
+// one and prints it ONCE, saying it is written down nowhere else; restoring
+// the old machine's CVs then replaced it silently, so the password on the
+// printout was refused and the one that worked belonged to a machine the
+// person migrating may no longer have.
+func TestABackupDoesNotCarryTheAdminPassword(t *testing.T) {
+	data := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(data, "jean"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "jean", "cv.json"),
+		[]byte(`{"meta":{},"content":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, ".admin-password"),
+		[]byte("pbkdf2-sha256$600000$AAAA$BBBB"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "b.tar.gz")
+	if err := backupCmd([]string{"--data", data, "--out", out}); err != nil {
+		t.Fatal(err)
+	}
+
+	names := namesIn(t, out)
+	for _, n := range names {
+		if strings.Contains(n, "admin-password") {
+			t.Fatalf("the backup carries the credential: %v", names)
+		}
+	}
+	// And it does still carry the CV, or it is not a backup.
+	if !slices.Contains(names, "jean/cv.json") {
+		t.Fatalf("the CV did not make it into the backup: %v", names)
+	}
+}
+
+// Restoring an archive taken BEFORE this change must not overwrite the
+// password of the machine it is being restored onto.
+//
+// Excluding it only on the way out would leave every archive already in
+// existence able to do the damage.
+func TestRestoringAnOldArchiveKeepsThisMachinesPassword(t *testing.T) {
+	// An archive of the old shape, built by hand: credential included.
+	source := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(source, "jean"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "jean", "cv.json"),
+		[]byte(`{"meta":{},"content":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, ".admin-password"),
+		[]byte("the-old-machines-hash"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(t.TempDir(), "old.tar.gz")
+	writeTarGz(t, archive, source, []string{".admin-password", "jean/cv.json"})
+
+	// This machine, with its own password.
+	data := t.TempDir()
+	const mine = "the-password-this-machine-was-given"
+	if err := os.WriteFile(filepath.Join(data, ".admin-password"),
+		[]byte(mine), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := restoreCmd([]string{"--from", archive, "--data", data}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(data, ".admin-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != mine {
+		t.Fatal("restoring overwrote this machine's password with the archive's")
+	}
+	// The CV still arrived.
+	if _, err := os.Stat(filepath.Join(data, "jean", "cv.json")); err != nil {
+		t.Fatalf("the CV was not restored: %v", err)
+	}
+}
+
+// namesIn lists what a backup contains.
+func namesIn(t *testing.T, path string) []string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	r := tar.NewReader(gz)
+	for {
+		h, err := r.Next()
+		if err != nil {
+			break
+		}
+		out = append(out, h.Name)
+	}
+	return out
+}
+
+// writeTarGz builds an archive of named files, for fixtures of the old shape.
+func writeTarGz(t *testing.T, path, root string, names []string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	gz := gzip.NewWriter(f)
+	defer gz.Close()
+	w := tar.NewWriter(gz)
+	defer w.Close()
+	for _, name := range names {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.WriteHeader(&tar.Header{
+			Name: name, Mode: 0o600, Size: int64(len(body)),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(body); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

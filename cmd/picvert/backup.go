@@ -53,6 +53,30 @@ import (
 // layered in the one order this project states everywhere else. A configuration
 // that will not parse is not fatal here: a backup is the thing you want MOST
 // when something is wrong with the configuration.
+// installationOnly is state that belongs to THIS machine, not to the CVs.
+//
+// A backup is the CVs. This file is the administration password, and it must
+// not travel with them for two reasons, both measured:
+//
+//  1. The nightly backup leaves the machine — the installer says so in as many
+//     words: "Copy them somewhere that is not this machine". A credential that
+//     rides along is a credential in every copy of every backup, on whatever
+//     that was copied to.
+//
+//  2. Restoring clobbered a password nobody knew. A fresh install generates
+//     one and prints it ONCE, saying it is written down nowhere else; then
+//     restoring the old machine's CVs replaced it silently. The password on
+//     the printout answered 401 and the one that worked was the old machine's,
+//     which whoever is doing the migration may well not have.
+//
+// The links are NOT here. They belong to the CVs and travel with them — they
+// live inside each profile now, and the legacy service-wide file is still
+// carried so that an appliance backed up before its links were migrated does
+// not lose them.
+func installationOnly(name string) bool {
+	return name == ".admin-password"
+}
+
 func configuredDataDir() string {
 	if cfg, err := loadConfig(); err == nil {
 		return cfg.ResolvedDataDir()
@@ -129,6 +153,10 @@ func writeArchive(w io.Writer, data string) (int64, int, error) {
 			return err
 		}
 		if rel == "." {
+			return nil
+		}
+		// This machine's own credential, not the CVs. See installationOnly.
+		if installationOnly(rel) {
 			return nil
 		}
 		// The trash holds what somebody asked to be rid of.
@@ -290,6 +318,12 @@ func restoreCmd(args []string) error {
 		// A tar can name anything it likes, including "../../etc/passwd". This
 		// one was written by us, but a restore reads a file somebody may have
 		// been handed — and the cost of checking is one line.
+		// Skipped on the way IN as well, so that an archive taken before this
+		// change cannot still overwrite the password of the machine it is
+		// being restored onto.
+		if installationOnly(filepath.Clean(header.Name)) {
+			continue
+		}
 		target := filepath.Join(data, filepath.Clean("/"+header.Name))
 		if !strings.HasPrefix(target, filepath.Clean(data)+string(os.PathSeparator)) {
 			return fmt.Errorf("the backup names a path outside the data directory: %q",
