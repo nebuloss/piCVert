@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"picvert/internal/config"
+	"picvert/internal/document"
 	"picvert/internal/tokens"
 )
 
@@ -432,5 +433,64 @@ func TestTheCVCarriesAContentPolicyThatAllowsItsOwnFonts(t *testing.T) {
 	}
 	if w.Header().Get("Referrer-Policy") != "no-referrer" {
 		t.Error("a token in the address could leave through the Referer header")
+	}
+}
+
+// A CV cannot gain a second copy of the language it is already written in.
+//
+// The check used to be "does cv.<lang>.json exist", which misses the default
+// document entirely: a CV whose own language is English accepted "add
+// English", because cv.en.json did not exist yet even though cv.json was
+// already English.
+//
+// The result was two documents claiming one language. The switcher listed it
+// twice, the bare address served one and the language picker the other, and
+// editing through either left them silently disagreeing — with nothing to say
+// which was the real CV.
+func TestACVCannotBeAddedInTheLanguageItIsAlreadyIn(t *testing.T) {
+	s, slug := service(t)
+
+	doc, err := s.Store.Read(slug, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := document.Str(document.Meta(doc), "lang")
+	if own == "" {
+		t.Fatal("the example has no language of its own to test against")
+	}
+
+	if _, err := s.Store.AddLanguage(slug, own, ""); err == nil {
+		t.Fatalf("a %q version was added to a CV already written in %q", own, own)
+	}
+
+	// And exactly one document still claims it.
+	p, err := s.Profiles.Get(slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, l := range p.Languages() {
+		if l.Lang == own {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Fatalf("%d documents claim %q, expected 1", seen, own)
+	}
+}
+
+// Another language is still perfectly welcome.
+func TestADifferentLanguageIsStillAccepted(t *testing.T) {
+	s, slug := service(t)
+
+	doc, _ := s.Store.Read(slug, "")
+	own := document.Str(document.Meta(doc), "lang")
+	other := "de"
+	if own == other {
+		other = "it"
+	}
+
+	if _, err := s.Store.AddLanguage(slug, other, ""); err != nil {
+		t.Fatalf("adding %q was refused: %v", other, err)
 	}
 }

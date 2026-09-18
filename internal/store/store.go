@@ -378,6 +378,22 @@ func (s *Store) AddLanguage(slug, lang, from string) (document.Doc, error) {
 	if _, err := os.Stat(p.DocPath(lang)); err == nil {
 		return nil, fmt.Errorf("this CV already has a %q version", lang)
 	}
+	// The DEFAULT document counts as a version too, and checking only for the
+	// variant file missed it: a CV written in English accepted "add English",
+	// because cv.en.json did not exist yet even though cv.json was already
+	// English.
+	//
+	// What that produced was two documents claiming one language. The switcher
+	// listed it twice, the bare address served one of them and the language
+	// picker served the other, and editing through either left the two
+	// silently disagreeing — with nothing anywhere to say which was the real
+	// CV.
+	for _, existing := range p.Languages() {
+		if existing.Default && existing.Lang == lang {
+			return nil, fmt.Errorf("this CV is already written in %q — "+
+				"add a different language, or change this one in its settings", lang)
+		}
+	}
 	doc, err := s.Read(slug, from)
 	if err != nil {
 		return nil, err
