@@ -233,3 +233,47 @@ func TestAnAbandonedLoginDoesNotHoldTheQueue(t *testing.T) {
 		}
 	}
 }
+
+// The administration page must be told which port the CVs are on.
+//
+// A private link is stored as a bare path whenever no domain is configured,
+// which is the default. Followed from this page a bare path resolves against
+// the ADMINISTRATION port, where /e/<token>/ does not exist — measured as 404
+// there against 200 on the public one. So the page is given the public port
+// and builds absolute addresses with it.
+//
+// Taken from the configuration rather than assumed to be 3000: guessing is
+// right almost always, and silently wrong for anybody who moved it.
+func TestTheAdminPageIsToldThePublicPort(t *testing.T) {
+	s, _ := service(t)
+	s.Config.Listen = "0.0.0.0:8080"
+	admin := s.AdminHandler()
+
+	w := call(t, admin, "GET", "/", nil, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the page answered %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `data-public-port="8080"`) {
+		t.Fatal("the page was not told the public port — its links would " +
+			"resolve against the administration port, which does not serve them")
+	}
+}
+
+// And `--addr` must reach the configuration, not merely the listener.
+//
+// It used to be passed straight to Serve while the configuration kept whatever
+// the file said, so anything asking where CVs are served got an answer that
+// was quietly untrue.
+func TestPublicPortFallsBackWhenTheAddressIsOdd(t *testing.T) {
+	for _, c := range []struct{ listen, want string }{
+		{"0.0.0.0:3000", "3000"},
+		{"127.0.0.1:9400", "9400"},
+		{":8080", "8080"},
+		{"nonsense", "3000"},
+		{"", "3000"},
+	} {
+		if got := publicPort(c.listen); got != c.want {
+			t.Errorf("publicPort(%q) = %q, want %q", c.listen, got, c.want)
+		}
+	}
+}

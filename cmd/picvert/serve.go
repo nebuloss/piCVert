@@ -34,6 +34,17 @@ func serveCmd(args []string) error {
 	// means. The other commands do not, and refusing to run `picvert new` over
 	// the administration port's password is refusing for a reason that has
 	// nothing to do with it.
+	// Both flags fold into the configuration, not just the admin one.
+	//
+	// `--addr` used to be passed straight to Serve while cfg.Listen kept
+	// whatever the file said, so anything asking the configuration where CVs
+	// are served got an answer that was quietly untrue. The administration
+	// page asks exactly that, to build links to the other port, and it
+	// therefore pointed at the port from the file rather than the one being
+	// listened on.
+	if *addr != "" {
+		cfg.Listen = *addr
+	}
 	if *adminAddr != "" && *adminAddr != "off" {
 		cfg.Admin.Listen = *adminAddr
 	}

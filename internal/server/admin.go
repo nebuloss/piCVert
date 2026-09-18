@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"net"
+
 	"picvert/internal/document"
 	"picvert/internal/engine"
 	"picvert/internal/favicon"
@@ -48,7 +50,8 @@ func (s *Server) AdminHandler() http.Handler {
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		body, err := render("admin.html", map[string]any{
-			"PublicURL": s.Config.Domain,
+			"PublicURL":  s.Config.Domain,
+			"PublicPort": publicPort(s.Config.Listen),
 		})
 		if err != nil {
 			fail(w, http.StatusInternalServerError, err)
@@ -204,6 +207,23 @@ func (s *Server) adminProfile(h func(http.ResponseWriter, *http.Request, *profil
 		}
 		h(w, r, p)
 	}
+}
+
+// publicPort is the port the CVs are served on, for a page that is not on it.
+//
+// The administration interface has to build addresses on the OTHER port: a
+// private link is stored as a bare path whenever no domain is configured, and
+// a bare path followed from this page resolves against this port, where
+// /e/<token>/ does not exist.
+//
+// Taken from the configuration rather than assumed to be 3000. The default is
+// 3000 and guessing it would be right almost always — and silently wrong for
+// anybody who moved it, which is the kind of "almost" that costs an afternoon.
+func publicPort(listen string) string {
+	if _, port, err := net.SplitHostPort(listen); err == nil && port != "" {
+		return port
+	}
+	return "3000"
 }
 
 // --- the inventory ----------------------------------------------------------

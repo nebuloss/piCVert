@@ -137,6 +137,28 @@ function duration(seconds: number): string {
  * hidden` on a <table> is honoured by some browsers and quietly dropped by
  * others, and the corners were square on exactly one machine.
  */
+/**
+ * publicHref turns a private link into an address that works FROM THIS PAGE.
+ *
+ * The two ports are two servers. A link is stored as a bare path whenever no
+ * domain is configured — which is the default — and a bare path followed from
+ * the administration page resolves against the administration port, where
+ * /e/<token>/ does not exist. Measured: 404 there, 200 on the public port.
+ *
+ * `data-public-url` is the domain when the service knows it. Without one, the
+ * same host on the public port is the best guess available, and it is right
+ * for every arrangement that has not been told otherwise.
+ */
+function publicHref(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const configured = document.body.dataset.publicUrl;
+  if (configured) return configured.replace(/\/$/, '') + path;
+  // The port the server says it serves CVs on, not a guess. Same host,
+  // because the two ports are two listeners in one process.
+  const port = document.body.dataset.publicPort || '3000';
+  return `${location.protocol}//${location.hostname}:${port}${path}`;
+}
+
 /** A column: what it is called, and how much of the width it gets. */
 interface Column {
   label: string;
@@ -186,11 +208,16 @@ function table(columns: Column[], rows: HTMLElement[]): HTMLElement {
  * is a link whose failure looks exactly like a revoked one.
  */
 class CopyField {
+  /** The address as it works from here, which is also the one worth copying. */
+  private readonly href: string;
+
   constructor(
     private readonly label: string,
     private readonly value: string,
     private readonly onRotate?: () => void,
-  ) {}
+  ) {
+    this.href = publicHref(value);
+  }
 
   /**
    * The token, not the address.
@@ -210,7 +237,7 @@ class CopyField {
       type: 'button', class: 'link-copy', title: `Copy the ${this.label} link`,
       text: 'copy',
       onclick: () => {
-        void copy(this.value).then((done) => {
+        void copy(this.href).then((done) => {
           copyButton.textContent = done ? 'copied' : 'select it';
           window.setTimeout(() => { copyButton.textContent = 'copy'; }, 1500);
         });
@@ -219,7 +246,7 @@ class CopyField {
 
     return el('div', { class: 'linkrow' }, [
       el('span', { class: 'link-label', text: this.label }),
-      el('code', { text: this.fingerprint(), title: this.value }),
+      el('code', { text: this.fingerprint(), title: this.href }),
       copyButton,
       // BOTH, always. A link is either handed to somebody else or followed
       // oneself, and the page offered only the first — so seeing what a CV
@@ -227,7 +254,7 @@ class CopyField {
       // another tab. On a phone that is several deliberate actions to do the
       // most obvious thing on the page.
       el('a', {
-        class: 'link-open', href: this.value, target: '_blank', rel: 'noopener',
+        class: 'link-open', href: this.href, target: '_blank', rel: 'noopener',
         title: `Open the ${this.label} link`, text: 'open',
       }),
       // Renewing belongs BESIDE the link it renews. Offered once per row it
@@ -365,10 +392,13 @@ class ProfileTable {
         { label: 'CV', width: '13%' },
         { label: 'access', width: '11%' },
         { label: 'what it is', width: '17%' },
-        { label: 'links', width: '17%' },
+        { label: 'private links', width: '17%' },
         { label: 'size', width: '9%' },
         { label: 'changed', width: '12%' },
-        { label: '', width: '21%' },
+        // Named, because it was the answer to "why is there an open button
+        // AND a page button". The links are what you hand to somebody else;
+        // these are how you look at a CV yourself, now, without one.
+        { label: 'from here', width: '21%' },
       ],
       answer.profiles.map((p) => this.row(p)),
     )]);
@@ -416,15 +446,15 @@ class ProfileTable {
       el('td', { class: 'size', text: `${show.bytes(p.bytes)} \u00b7 ${p.history} entries` }),
       el('td', { class: 'when', text: show.when(p.updatedAt) }),
       el('td', { class: 'actions' }, [
-        // NOT "edit" and not "view": both are the private links, and both are
-        // already offered beside the link they belong to, with `open`. Having
-        // them here as well gave every row two buttons that did the same
-        // thing — and the two would have had to keep agreeing about which
-        // link they meant.
+        // NOT "edit" and not "view": both are the private links, already
+        // offered beside the link they belong to. Having them here as well
+        // gave every row two buttons doing the same thing.
         //
-        // What is left is what ONLY this port can do: it serves any CV
-        // directly, without a token, which is how an administrator looks at
-        // one whose link they have not got in front of them.
+        // What is left is what only THIS port can do: serve any CV without a
+        // token, from the port an administrator is already on. That is not a
+        // nicety — the private links go to the public port, which may not be
+        // reachable from where this page is being read, and a link that has
+        // just been renewed is one nobody has yet.
         el('a', { class: 'tag', href: `/view/${p.slug}/cv.html`, target: '_blank', text: 'page' }),
         ' ',
         el('a', { class: 'tag', href: `/view/${p.slug}/cv.pdf`, target: '_blank', text: 'pdf' }),
