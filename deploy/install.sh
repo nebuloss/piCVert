@@ -145,11 +145,27 @@ elif ! id "$SERVICE_USER" >/dev/null 2>&1; then
   if command -v useradd >/dev/null 2>&1; then
     useradd --system --home-dir "$DATA" --shell /usr/sbin/nologin "$SERVICE_USER"
   elif command -v adduser >/dev/null 2>&1; then
-    # busybox / Alpine
-    adduser -S -D -H -h "$DATA" -s /sbin/nologin "$SERVICE_USER"
+    # busybox, as Alpine has. THE GROUP FIRST, and named: `adduser -S` alone
+    # puts the account in `nogroup` and creates no group of its own, so a
+    # service asking to run as `picvert:picvert` fails with "group not found"
+    # — which says nothing about the account having been made at all.
+    if command -v addgroup >/dev/null 2>&1; then
+      addgroup -S "$SERVICE_USER" 2>/dev/null || true
+      adduser -S -D -H -h "$DATA" -s /sbin/nologin -G "$SERVICE_USER" "$SERVICE_USER"
+    else
+      adduser -S -D -H -h "$DATA" -s /sbin/nologin "$SERVICE_USER"
+    fi
   else
     die "cannot create the $SERVICE_USER account: no useradd or adduser"
   fi
+fi
+
+# An account that already exists but has no matching group is the state the
+# first version of this left behind. Corrected rather than ignored, so that
+# re-running the installer repairs an installation instead of reproducing it.
+if command -v addgroup >/dev/null 2>&1 && ! getent group "$SERVICE_USER" >/dev/null 2>&1; then
+  addgroup -S "$SERVICE_USER" 2>/dev/null || true
+  addgroup "$SERVICE_USER" "$SERVICE_USER" 2>/dev/null || true
 fi
 
 mkdir -p "$PREFIX" "$DATA/data" "$DATA/backups"
