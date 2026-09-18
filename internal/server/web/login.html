@@ -8,36 +8,76 @@
 <style>
   /* Inline, and the only page here that is. Everything else is loaded from
      /assets; this page is shown to somebody who has proved nothing, and
-     fetching the interface for them would be drawing part of it first. */
+     fetching the interface for them would be drawing part of it first.
+
+     Which is also why it repeats the colours rather than importing them: two
+     dozen duplicated declarations are the price of the page behind the
+     password not being fetched before the password is right. */
+  :root {
+    color-scheme: light dark;
+    --accent: #8a5a12; --warn: #a3401f;
+    --ink: #1b1b1f; --dim: #5d5d66;
+    --line: #e4e1da; --bg: #faf7f0; --card: #fff;
+    --shadow: 0 1px 2px rgb(27 20 5 / 5%), 0 10px 30px -12px rgb(27 20 5 / 28%);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #e0a94a; --warn: #e8896a;
+      --ink: #eceaf1; --dim: #a5a2ad;
+      --line: #34323a; --bg: #17161a; --card: #1f1e23;
+      --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px -14px rgb(0 0 0 / 80%);
+    }
+  }
+
+  * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; display: grid; place-items: center;
-    background: #faf7f0; color: #1b1b1f;
-    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 24px;
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
   form {
-    background: #fff; border: 1px solid #e4e1da; border-radius: 14px;
-    padding: 28px 30px; width: 320px;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; box-shadow: var(--shadow);
+    padding: 30px 30px 26px; width: 340px;
   }
-  h1 { font-size: 17px; margin: 0 0 4px; }
-  p { margin: 0 0 18px; color: #5d5d66; font-size: 13px; }
+  /* The bird, amber, at the size it was drawn to read at. It is the one thing
+     on this page that says which of the two ports this is before anything has
+     been typed. */
+  img.mark { display: block; margin: 0 auto 14px; }
+  h1 { font-size: 16px; font-weight: 650; margin: 0 0 4px; text-align: center; }
+  p.lede {
+    margin: 0 0 20px; color: var(--dim); font-size: 13px;
+    text-align: center; line-height: 1.5;
+  }
+  label {
+    display: block; font-size: 11px; color: var(--dim);
+    text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+  }
   input {
-    width: 100%; font: inherit; padding: 9px 11px; border-radius: 8px;
-    border: 1px solid #e4e1da; margin-bottom: 12px;
+    width: 100%; font: inherit; font-size: 14px; padding: 9px 12px;
+    margin: 6px 0 16px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
   }
-  input:focus { outline: 2px solid #8a5a12; outline-offset: -1px; }
+  input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   button {
-    width: 100%; font: inherit; padding: 9px; border-radius: 999px;
-    border: 1px solid #8a5a12; background: #8a5a12; color: #fff; cursor: pointer;
+    width: 100%; font: inherit; font-weight: 550; padding: 10px;
+    border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff;
   }
-  button:hover { opacity: .9; }
-  .problem { color: #a3401f; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { button { color: #211a0c; } }
+  button:hover { opacity: .88; }
+  .problem { color: var(--warn); font-weight: 600; }
 </style>
 </head>
 <body>
 <form method="post" action="/login">
+  <img class="mark" src="/favicon.svg" alt="" width="44" height="44">
   <h1>piCVert administration</h1>
-  <p>{{if .Problem}}<span class="problem">{{.Problem}}</span>{{else}}This port manages every CV on the service.{{end}}</p>
-  <input type="password" name="password" placeholder="Password" autofocus
+  <p class="lede">{{if .Problem}}<span class="problem">{{.Problem}}</span>{{else}}This port manages every CV on the service.{{end}}</p>
+  <label for="password">Password</label>
+  <input id="password" type="password" name="password" autofocus
          autocomplete="current-password" required>
   <button type="submit">Sign in</button>
 </form>

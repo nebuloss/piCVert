@@ -9,32 +9,57 @@
 </head>
 <body data-public-url="{{.PublicURL}}">
 
-<header>
-  <strong>piCVert</strong>
-  <span class="warn">administration — no access control, never proxy this port</span>
+<header class="topbar">
+  <!-- The amber bird, not the green one: the two surfaces are usually open
+       side by side and only this one deletes CVs. -->
+  <img class="mark" src="/favicon.svg" alt="" width="26" height="26">
+  <div class="title">
+    <strong>piCVert</strong>
+    <span class="where">administration</span>
+  </div>
   <span class="spacer"></span>
   <span class="muted" id="policy"></span>
-  <a class="muted" href="/logout">sign out</a>
+  <a class="signout" href="/logout">Sign out</a>
 </header>
+
+<p class="caution">
+  <b>This port has no access control by design.</b>
+  It is protected by not being proxied — never expose it.
+</p>
 
 <main>
   <section id="metrics" aria-label="What the service is doing"></section>
-  <section id="create" aria-label="Create a CV"></section>
 
-  <div class="bar">
-    <input type="search" id="q" placeholder="Search a CV" aria-label="Search">
-    <span class="spacer"></span>
-    <span class="muted" id="count"></span>
-    <button id="prev" title="Previous page">‹</button>
-    <button id="next" title="Next page">›</button>
-  </div>
-  <div id="list"></div>
+  <section class="panel" aria-labelledby="create-h">
+    <h2 id="create-h">Make a CV</h2>
+    <p class="lede">
+      Its edit link appears once, here. That link is the only way into the CV:
+      there is no account and nothing to recover it with.
+    </p>
+    <div id="create"></div>
+  </section>
 
-  <h2>Set aside</h2>
-  <p class="muted">
-    Deleted CVs wait here before being erased for good, so a mistake can be undone.
-  </p>
-  <div id="trash"></div>
+  <section class="panel" aria-labelledby="cvs-h">
+    <h2 id="cvs-h">CVs</h2>
+    <p class="lede">Everything on this service, published or reachable by link only.</p>
+
+    <div class="bar">
+      <input type="search" id="q" placeholder="Search a CV" aria-label="Search">
+      <span class="spacer"></span>
+      <span class="muted" id="count"></span>
+      <button id="prev" title="Previous page" aria-label="Previous page">‹</button>
+      <button id="next" title="Next page" aria-label="Next page">›</button>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="trash-h">
+    <h2 id="trash-h">Set aside</h2>
+    <p class="lede">
+      Deleted CVs wait here before being erased for good, so a mistake can be undone.
+    </p>
+    <div id="trash"></div>
+  </section>
 </main>
 
 <script type="module" src="{{asset "admin.js"}}"></script>

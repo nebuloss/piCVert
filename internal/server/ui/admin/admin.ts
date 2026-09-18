@@ -111,11 +111,39 @@ function duration(seconds: number): string {
   return `${Math.floor(seconds / 86400)}d`;
 }
 
-/** table builds a headed table, since both halves of this page are one. */
-function table(headings: string[], rows: HTMLElement[]): HTMLElement {
-  return el('table', {}, [
-    el('thead', {}, [el('tr', {}, headings.map((h) => el('th', { text: h })))]),
-    el('tbody', {}, rows),
+/**
+ * table builds a headed table, since both halves of this page are one.
+ *
+ * Wrapped, because the rounded corners belong to the wrapper: `overflow:
+ * hidden` on a <table> is honoured by some browsers and quietly dropped by
+ * others, and the corners were square on exactly one machine.
+ */
+/** A column: what it is called, and how much of the width it gets. */
+interface Column {
+  label: string;
+  width: string;
+}
+
+/**
+ * table builds a headed table, since both halves of this page are one.
+ *
+ * The widths are DECLARED, and the table is laid out fixed. Left to itself the
+ * browser gives the room to whichever column holds the longest unbreakable run
+ * of characters — here that is a 192-bit token inside a URL, which has no word
+ * breaks in it at all. It took the width, and "Jean Dupont" was broken across
+ * two lines to pay for it.
+ *
+ * Wrapped in a div because the rounded corners belong to the wrapper:
+ * `overflow: hidden` on a <table> is honoured by some browsers and quietly
+ * dropped by others, so the corners were square on exactly one machine.
+ */
+function table(columns: Column[], rows: HTMLElement[]): HTMLElement {
+  return el('div', { class: 'tablewrap' }, [
+    el('table', {}, [
+      el('colgroup', {}, columns.map((c) => el('col', { style: `width:${c.width}` }))),
+      el('thead', {}, [el('tr', {}, columns.map((c) => el('th', { text: c.label })))]),
+      el('tbody', {}, rows),
+    ]),
   ]);
 }
 
@@ -141,7 +169,10 @@ class CopyField {
         });
       },
     });
-    return el('div', { class: 'linkrow' }, [button, el('code', { text: this.value })]);
+    return el('div', { class: 'linkrow' }, [
+      button,
+      el('code', { text: this.value, title: this.value }),
+    ]);
   }
 }
 
@@ -252,18 +283,25 @@ class ProfileTable {
       return;
     }
     replace(this.node, [table(
-      ['CV', 'access', 'links', 'size', 'last change', ''],
+      [
+        { label: 'CV', width: '13%' },
+        { label: 'access', width: '13%' },
+        { label: 'links', width: '21%' },
+        { label: 'size', width: '9%' },
+        { label: 'last change', width: '13%' },
+        { label: '', width: '31%' },
+      ],
       answer.profiles.map((p) => this.row(p)),
     )]);
   }
 
   private row(p: ProfileSummary): HTMLElement {
     const cells: Child[] = [
-      el('td', {}, [
-        el('div', { text: p.name }),
+      el('td', { class: 'who' }, [
+        el('div', { class: 'name', text: p.name }),
         el('code', { class: 'muted', text: p.slug }),
       ]),
-      el('td', {}, [
+      el('td', { class: 'access' }, [
         el('span', {
           class: `tag${p.public ? ' public' : ''}`,
           text: p.public ? 'published' : 'by link only',
@@ -275,8 +313,8 @@ class ProfileTable {
         new CopyField('edit', p.links.edit).render(),
         new CopyField('read', p.links.read).render(),
       ]),
-      el('td', { text: `${show.bytes(p.bytes)} · ${p.history} entries` }),
-      el('td', { text: show.when(p.updatedAt) }),
+      el('td', { class: 'size', text: `${show.bytes(p.bytes)} \u00b7 ${p.history} entries` }),
+      el('td', { class: 'when', text: show.when(p.updatedAt) }),
       el('td', { class: 'actions' }, [
         el('a', { class: 'tag', href: `/view/${p.slug}/cv.html`, target: '_blank', text: 'page' }),
         ' ',
@@ -307,15 +345,21 @@ class TrashTable {
       return;
     }
     replace(this.node, [table(
-      ['CV', 'deleted', 'erased', 'size', ''],
+      [
+        { label: 'CV', width: '26%' },
+        { label: 'deleted', width: '18%' },
+        { label: 'erased', width: '18%' },
+        { label: 'size', width: '12%' },
+        { label: '', width: '26%' },
+      ],
       entries.map((entry) => el('tr', {}, [
-        el('td', {}, [
-          el('div', { text: entry.name }),
+        el('td', { class: 'who' }, [
+          el('div', { class: 'name', text: entry.name }),
           el('code', { class: 'muted', text: entry.slug }),
         ]),
-        el('td', { text: show.when(entry.deletedAt) }),
-        el('td', { text: show.when(entry.expiresAt) }),
-        el('td', { text: show.bytes(entry.bytes) }),
+        el('td', { class: 'when', text: show.when(entry.deletedAt) }),
+        el('td', { class: 'when', text: show.when(entry.expiresAt) }),
+        el('td', { class: 'size', text: show.bytes(entry.bytes) }),
         el('td', { class: 'actions' }, [
           el('button', { text: 'restore', onclick: () => this.actions.restore(entry) }),
           el('button', { class: 'danger', text: 'erase now',
