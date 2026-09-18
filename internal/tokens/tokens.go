@@ -61,7 +61,25 @@ type Grant struct {
 	Mode Mode
 }
 
-// Store is the link file.
+// Store is the links, kept inside the profile they belong to.
+//
+// # WHY NOT ONE FILE FOR THE WHOLE SERVICE
+//
+// It was one file, and that made a profile folder something less than a CV.
+// Its two links are the ONLY credentials a CV has, and they lived somewhere
+// else — so copying a profile to another machine produced a CV on different
+// links, and setting one aside lost them entirely. The administration page
+// promised "restored, with its original links" and returned the CV on new
+// ones, locking out everybody who had been given one.
+//
+// That was patched by carrying the links through the trash note by hand. This
+// removes the need: the links are in the folder, so they move when it moves,
+// and Trash and Restore go back to being a rename.
+//
+// Every write also used to take a global lock, read the whole database, change
+// one entry and write the whole database back. Two people editing two
+// different CVs contended on one file for no reason. Now a profile's links are
+// written by the profile's own path.
 type Store struct {
 	Profiles *profiles.Repository
 	mu       sync.Mutex
@@ -69,42 +87,58 @@ type Store struct {
 
 func New(repo *profiles.Repository) *Store { return &Store{Profiles: repo} }
 
-// File is resolved on every call: the data root can move.
-func (s *Store) File() string {
+// file is where one profile keeps its links.
+func (s *Store) file(slug string) string {
+	return filepath.Join(s.Profiles.DataDir(), slug, "links.json")
+}
+
+// legacy is the single file this used to be, still read so that a service
+// upgraded in place keeps handing out the links it has already given away.
+func (s *Store) legacy() string {
 	return filepath.Join(s.Profiles.DataDir(), ".share-tokens.json")
 }
 
-type database map[string]Links
-
-func (s *Store) load() database {
-	raw, err := os.ReadFile(s.File())
-	if err != nil {
-		return database{}
+func (s *Store) read(slug string) Links {
+	if raw, err := os.ReadFile(s.file(slug)); err == nil {
+		var l Links
+		if json.Unmarshal(raw, &l) == nil && l.Edit != "" {
+			return l
+		}
 	}
-	var db database
-	if json.Unmarshal(raw, &db) != nil || db == nil {
-		return database{}
+	// Not there: this may be a service that has just been upgraded, whose
+	// links are still in the old shared file. Read them rather than mint new
+	// ones — new ones would silently break every link already handed out.
+	if raw, err := os.ReadFile(s.legacy()); err == nil {
+		var db map[string]Links
+		if json.Unmarshal(raw, &db) == nil {
+			return db[slug]
+		}
 	}
-	return db
+	return Links{}
 }
 
-func (s *Store) save(db database) error {
-	file := s.File()
-	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+func (s *Store) write(slug string, l Links) error {
+	dir := filepath.Join(s.Profiles.DataDir(), slug)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	raw, err := json.MarshalIndent(db, "", "  ")
+	raw, err := json.MarshalIndent(l, "", "  ")
 	if err != nil {
 		return err
 	}
+	file := s.file(slug)
 	tmp := file + ".tmp"
 	if err := os.WriteFile(tmp, append(raw, '\n'), 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, file); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	_ = os.Chmod(file, 0o600)
+	// Same reason as the document beside it: written by root over SSH while
+	// the service runs as its own account, a 0600 file it cannot read makes
+	// every link answer 403 with nothing pointing at ownership.
 	alignOwnership(file)
 	return nil
 }
@@ -127,22 +161,29 @@ func (s *Store) ForProfile(slug string) (Links, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	db := s.load()
-	entry := db[slug]
-	if entry.Edit == "" || entry.Read == "" {
-		if entry.Edit == "" {
-			entry.Edit = newToken()
+
+	entry := s.read(slug)
+	if entry.Edit != "" && entry.Read != "" {
+		// Read, but possibly from the old service-wide file. Written back into
+		// the profile so the upgrade actually completes: a fallback that is
+		// only ever read is not a migration, it is a second place to look
+		// forever — which is the thing this change exists to remove.
+		if _, err := os.Stat(s.file(slug)); err != nil {
+			_ = s.write(slug, entry)
 		}
-		if entry.Read == "" {
-			entry.Read = newToken()
-		}
-		if entry.CreatedAt == "" {
-			entry.CreatedAt = time.Now().UTC().Format(time.RFC3339)
-		}
-		db[slug] = entry
-		if err := s.save(db); err != nil {
-			return Links{}, err
-		}
+		return entry, nil
+	}
+	if entry.Edit == "" {
+		entry.Edit = newToken()
+	}
+	if entry.Read == "" {
+		entry.Read = newToken()
+	}
+	if entry.CreatedAt == "" {
+		entry.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	if err := s.write(slug, entry); err != nil {
+		return Links{}, err
 	}
 	return entry, nil
 }
@@ -157,16 +198,15 @@ func (s *Store) Rotate(slug string, mode Mode) (Links, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	db := s.load()
-	entry := db[slug]
+
+	entry := s.read(slug)
 	stamp := time.Now().UTC().Format(time.RFC3339)
 	if mode == Edit {
 		entry.Edit, entry.EditRotatedAt = newToken(), stamp
 	} else {
 		entry.Read, entry.ReadRotatedAt = newToken(), stamp
 	}
-	db[slug] = entry
-	if err := s.save(db); err != nil {
+	if err := s.write(slug, entry); err != nil {
 		return Links{}, err
 	}
 	return entry, nil
@@ -174,63 +214,33 @@ func (s *Store) Rotate(slug string, mode Mode) (Links, error) {
 
 // Forget drops a profile's links for good.
 //
-// Called when a CV is really destroyed, not when it is merely set aside. Left
-// in place, the entry makes Verify hand back a slug whose directory is gone,
-// and every route trusting it then fails on a read instead of answering
-// cleanly that the link is invalid.
-// Adopt puts links back under a slug, as they were.
-//
-// For restoring a CV that was set aside. Its links go with it into the trash —
-// a live token that resolves to a missing directory is a link that fails on a
-// read rather than answering cleanly that it is invalid — and putting the same
-// ones back is what makes restoring actually restore: everybody who was given
-// the link still has a working one.
-//
-// Refuses to overwrite: if the slug has been taken again in the meantime, the
-// living CV keeps its own links rather than having a deleted one's imposed on
-// it.
-func (s *Store) Adopt(slug string, links Links) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	db := s.load()
-	if existing, taken := db[slug]; taken && existing.Edit != "" {
-		return false
-	}
-	db[slug] = links
-	return s.save(db) == nil
-}
-
+// Only for a CV that is really destroyed. A CV merely SET ASIDE keeps its
+// links without anybody arranging it: they are in the folder, and the folder
+// is what moves. That is the whole point of keeping them there — the previous
+// arrangement had to copy them into the trash note and put them back by hand,
+// and got it wrong, so restoring locked people out.
 func (s *Store) Forget(slug string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	db := s.load()
-	if _, ok := db[slug]; !ok {
-		return false
+	return os.Remove(s.file(slug)) == nil
+}
+
+// List is every profile that has links, for the inventory.
+func (s *Store) List() []Entry {
+	var out []Entry
+	for _, p := range s.Profiles.List() {
+		if l := s.read(p.Slug); l.Edit != "" {
+			out = append(out, Entry{Slug: p.Slug, Links: l})
+		}
 	}
-	delete(db, slug)
-	_ = s.save(db)
-	return true
+	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
+	return out
 }
 
 // Entry is one profile's links, with its slug, for the inventory.
 type Entry struct {
 	Slug string `json:"slug"`
 	Links
-}
-
-// List is every profile that has links.
-func (s *Store) List() []Entry {
-	db := s.load()
-	slugs := make([]string, 0, len(db))
-	for slug := range db {
-		slugs = append(slugs, slug)
-	}
-	sort.Strings(slugs)
-	out := make([]Entry, 0, len(slugs))
-	for _, slug := range slugs {
-		out = append(out, Entry{Slug: slug, Links: db[slug]})
-	}
-	return out
 }
 
 // Verify identifies a token.
@@ -245,7 +255,11 @@ func (s *Store) Verify(token string) (Grant, bool) {
 	want := []byte(token)
 	var found Grant
 	ok := false
-	for slug, links := range s.load() {
+	// Every profile is read. That was already true — the single file held them
+	// all and was walked in full — so nothing got slower by splitting it up,
+	// and the constant-time property below is unchanged.
+	for _, entry := range s.List() {
+		slug, links := entry.Slug, entry.Links
 		for mode, value := range map[Mode]string{Edit: links.Edit, Read: links.Read} {
 			got := []byte(value)
 			// Different lengths are a non-match; subtle.ConstantTimeCompare

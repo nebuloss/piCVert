@@ -428,33 +428,21 @@ func (s *Server) Trash(p *profiles.Profile) error {
 	target := filepath.Join(s.trashDir(), p.Slug)
 	_ = os.RemoveAll(target)
 
-	// Read BEFORE the directory moves. ForProfile looks the profile up first
-	// and fails once it is gone, so asking afterwards quietly yields nothing —
-	// which is how the first attempt at this fix went on regenerating the
-	// links while looking exactly like it had preserved them.
-	links, _ := s.Tokens.ForProfile(p.Slug)
-
+	// NOTHING is done about the links here, and that is the point.
+	//
+	// They live in the profile's own folder now, so they move with it and come
+	// back with it. This used to read them out, copy them into the note below
+	// and put them back on restore — three steps that had to agree, and did
+	// not: the page promised "restored, with its original links" and returned
+	// the CV on new ones, locking out everybody holding one.
 	if err := os.Rename(p.Dir, target); err != nil {
 		return err
 	}
-	// The links are SET ASIDE WITH THE CV, not merely dropped.
-	//
-	// They have to leave the live store: a token left there identifies a slug
-	// whose directory is gone, and every route trusting it then fails on a read
-	// instead of answering cleanly that the link is invalid.
-	//
-	// But dropping them made restoring a lie. The page says "restored, with its
-	// original links" and the CV came back on NEW ones, because the links live
-	// in a file of their own rather than in the folder that was moved — so
-	// everybody who had been given a link was locked out by an undo. Keeping
-	// them in the note is what makes that sentence true.
 	note := map[string]any{
 		"slug": p.Slug, "name": p.Name,
 		"deletedAt": time.Now().UTC().Format(time.RFC3339),
-		"links":     links,
 	}
 	writeJSON(target+".json", note)
-	s.Tokens.Forget(p.Slug)
 	s.forget(p)
 	return nil
 }
@@ -533,21 +521,8 @@ func (s *Server) Restore(slug string) error {
 	if err := os.MkdirAll(filepath.Dir(p.Dir), 0o700); err != nil {
 		return err
 	}
-	// Read BEFORE the note is removed, and before the directory moves: this is
-	// the only copy of the links this CV was handed out on.
-	var note struct {
-		Links tokens.Links `json:"links"`
-	}
-	if raw, err := os.ReadFile(source + ".json"); err == nil {
-		_ = json.Unmarshal(raw, &note)
-	}
 	if err := os.Rename(source, p.Dir); err != nil {
 		return err
-	}
-	// Put back, so an undo really is one. A CV set aside before this existed
-	// has no links in its note, and simply gets fresh ones as it did before.
-	if note.Links.Edit != "" && note.Links.Read != "" {
-		s.Tokens.Adopt(slug, note.Links)
 	}
 	_ = os.Remove(source + ".json")
 	return nil
