@@ -416,11 +416,15 @@ class ProfileTable {
       el('td', { class: 'size', text: `${show.bytes(p.bytes)} \u00b7 ${p.history} entries` }),
       el('td', { class: 'when', text: show.when(p.updatedAt) }),
       el('td', { class: 'actions' }, [
-        // The editor lives on the PUBLIC port and is opened by the edit token,
-        // which is exactly what this link already is. It was displayed to be
-        // copied and never offered as somewhere to go.
-        el('a', { class: 'tag', href: p.links.edit, target: '_blank', text: 'edit' }),
-        ' ',
+        // NOT "edit" and not "view": both are the private links, and both are
+        // already offered beside the link they belong to, with `open`. Having
+        // them here as well gave every row two buttons that did the same
+        // thing — and the two would have had to keep agreeing about which
+        // link they meant.
+        //
+        // What is left is what ONLY this port can do: it serves any CV
+        // directly, without a token, which is how an administrator looks at
+        // one whose link they have not got in front of them.
         el('a', { class: 'tag', href: `/view/${p.slug}/cv.html`, target: '_blank', text: 'page' }),
         ' ',
         el('a', { class: 'tag', href: `/view/${p.slug}/cv.pdf`, target: '_blank', text: 'pdf' }),
