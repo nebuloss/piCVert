@@ -61,3 +61,72 @@ func TestRotatingKeepsTheNewest(t *testing.T) {
 		t.Error("rotation removed the backup it had just taken")
 	}
 }
+
+// Backup finds the data directory the way the service does.
+//
+// It used to work it out on its own, from the environment and a path beside
+// the binary, which meant that on a machine configured by /etc/picvert.yaml —
+// every installed one — it looked in the wrong place and said "no data
+// directory". Run as root on the appliance it reported /root/data while
+// `picvert config` on the same binary reported /var/lib/picvert/data.
+//
+// That is the command you reach for when moving a machine, so it failing is
+// the difference between a migration and a support ticket.
+func TestBackupFindsTheConfiguredDataDirectory(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "elsewhere")
+	if err := os.MkdirAll(filepath.Join(data, "jean"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	file := filepath.Join(dir, "picvert.yaml")
+	if err := os.WriteFile(file, []byte("data-dir: \""+data+"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PICVERT_CONFIG", file)
+	t.Setenv("PICVERT_DATA", "")
+
+	if got := configuredDataDir(); got != data {
+		t.Fatalf("configuredDataDir() = %q, want the configured %q", got, data)
+	}
+}
+
+// The environment still wins, as it does for every other setting.
+func TestTheEnvironmentStillChoosesTheDataDirectory(t *testing.T) {
+	dir := t.TempDir()
+	fromEnv := filepath.Join(dir, "from-env")
+	if err := os.MkdirAll(fromEnv, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	file := filepath.Join(dir, "picvert.yaml")
+	if err := os.WriteFile(file,
+		[]byte("data-dir: \""+filepath.Join(dir, "from-file")+"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PICVERT_CONFIG", file)
+	t.Setenv("PICVERT_DATA", fromEnv)
+
+	if got := configuredDataDir(); got != fromEnv {
+		t.Fatalf("configuredDataDir() = %q, want %q from the environment", got, fromEnv)
+	}
+}
+
+// A configuration that will not parse must not stop a backup.
+//
+// A backup is the thing you want MOST when something is wrong with the
+// configuration, and refusing to take one then would be refusing at the worst
+// possible moment.
+func TestBackupStillWorksWithABrokenConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "picvert.yaml")
+	if err := os.WriteFile(file, []byte("this: [is not: valid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PICVERT_CONFIG", file)
+	t.Setenv("PICVERT_DATA", dir)
+
+	if got := configuredDataDir(); got != dir {
+		t.Fatalf("a broken configuration changed the answer: %q", got)
+	}
+}

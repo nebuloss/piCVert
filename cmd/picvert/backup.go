@@ -40,6 +40,29 @@ import (
 // service runs therefore catches a consistent version of every file — possibly
 // from slightly different moments, which for a set of independent CVs is not a
 // meaningful difference.
+// configuredDataDir is where the CVs are, asked the same way the service asks.
+//
+// `backup` and `restore` used to work it out themselves, from the environment
+// and a path beside the binary — so on a machine configured by
+// /etc/picvert.yaml, which is every installed one, they looked in the wrong
+// place and reported "no data directory". The service and its own backup
+// command disagreed about where the data was, and the command that disagreed
+// was the one you reach for when moving a machine.
+//
+// Through config.Load, so the file, the environment and the defaults are
+// layered in the one order this project states everywhere else. A configuration
+// that will not parse is not fatal here: a backup is the thing you want MOST
+// when something is wrong with the configuration.
+func configuredDataDir() string {
+	if cfg, err := loadConfig(); err == nil {
+		return cfg.ResolvedDataDir()
+	}
+	if root, err := home(); err == nil {
+		return envOr("PICVERT_DATA", filepath.Join(root, "data"))
+	}
+	return envOr("PICVERT_DATA", "data")
+}
+
 func backupCmd(args []string) error {
 	fs := flag.NewFlagSet("backup", flag.ExitOnError)
 	out := fs.String("out", "", "file to write (default: picvert-<date>.tar.gz here)")
@@ -51,11 +74,7 @@ func backupCmd(args []string) error {
 
 	data := *dir
 	if data == "" {
-		root, err := home()
-		if err != nil {
-			return err
-		}
-		data = envOr("PICVERT_DATA", filepath.Join(root, "data"))
+		data = configuredDataDir()
 	}
 	if _, err := os.Stat(data); err != nil {
 		return fmt.Errorf("no data directory at %s", data)
@@ -228,11 +247,7 @@ func restoreCmd(args []string) error {
 
 	data := *dir
 	if data == "" {
-		root, err := home()
-		if err != nil {
-			return err
-		}
-		data = envOr("PICVERT_DATA", filepath.Join(root, "data"))
+		data = configuredDataDir()
 	}
 
 	if !*force {
