@@ -294,13 +294,19 @@ td.who .name, td.who code {
 td.access { line-height: 1.9; }
 td.access .tag { margin-right: 2px; }
 td.links { overflow: hidden; }
-td.size, td.when { white-space: nowrap; font-size: 12.5px; color: var(--dim); }
+/* Both are numbers read down the column rather than across the row, so they
+   wrap rather than run into their neighbour when the window is narrow. */
+td.size, td.when { font-size: 12.5px; color: var(--dim); }
+td.when { white-space: nowrap; }
 td.actions { white-space: nowrap; text-align: right; vertical-align: middle; }
 td.actions > * { margin-left: 5px; }
 /* Smaller than the buttons elsewhere: four controls have to sit on one line in
    a column whose width is fixed, and a cell that overflows in a fixed layout is
    a cell whose last button is invisible rather than wrapped. */
 td.actions button { padding: 5px 11px; font-size: 13px; }
+/* The three links wrap as a group before the delete button does: losing sight
+   of "delete" is worse than a second line. */
+td.actions { line-height: 2.1; }
 
 /* One line, clipped, with the full value on hover and in the clipboard.
 
@@ -315,10 +321,26 @@ td.actions button { padding: 5px 11px; font-size: 13px; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   min-width: 0;
 }
-button.link-copy {
+button.link-copy, button.link-renew {
   padding: 1px 9px; font-size: 11px; flex: 0 0 auto;
   background: var(--sunk); color: var(--dim);
 }
+/* Shown on hover or focus, not always. Renewing breaks every copy of a link
+   already handed out, and a button that destructive sitting permanently
+   beside a copy button is a mis-click waiting to happen. Focus-within keeps
+   it reachable by keyboard, where hover does not exist. */
+button.link-renew { opacity: 0; transition: opacity .12s; }
+.linkrow:hover button.link-renew,
+.linkrow:focus-within button.link-renew { opacity: 1; }
+button.link-renew:hover { border-color: var(--warn); color: var(--warn); }
+
+/* What the CV is, rather than how big its folder is. */
+td.what { font-size: 12.5px; }
+td.what .role {
+  font-weight: 550; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+td.what .muted { display: block; margin-top: 2px; }
 
 /* --- tags ---------------------------------------------------------------- */
 
@@ -327,6 +349,14 @@ button.link-copy {
   border: 1px solid var(--line); border-radius: 999px;
   padding: 2px 9px; color: var(--dim); text-decoration: none;
   white-space: nowrap;
+}
+/* A document that cannot be read, or a template that is not installed. Red
+   rather than amber: amber is this page's own colour and would read as
+   decoration here. */
+.tag.broken {
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
 }
 .tag.public {
   border-color: color-mix(in srgb, var(--ok) 45%, transparent);

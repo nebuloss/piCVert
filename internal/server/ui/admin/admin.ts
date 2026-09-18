@@ -175,7 +175,27 @@ function table(columns: Column[], rows: HTMLElement[]): HTMLElement {
  * is a link whose failure looks exactly like a revoked one.
  */
 class CopyField {
-  constructor(private readonly label: string, private readonly value: string) {}
+  constructor(
+    private readonly label: string,
+    private readonly value: string,
+    private readonly onRotate?: () => void,
+  ) {}
+
+  /**
+   * The token, not the address.
+   *
+   * The full link does not fit a table cell and was clipped to `https://…`,
+   * which is the same eight characters on every row of every CV — a column
+   * carrying no information at all. The token is the part that differs, and
+   * seeing it change is how one confirms a renewal actually happened.
+   *
+   * The whole link is still one click away on the button, and under the
+   * pointer as a tooltip.
+   */
+  private fingerprint(): string {
+    const token = this.value.match(/\/e\/([^/]+)/)?.[1];
+    return token ? `${token.slice(0, 10)}…` : this.value;
+  }
 
   render(): HTMLElement {
     const button = el('button', {
@@ -190,7 +210,18 @@ class CopyField {
     });
     return el('div', { class: 'linkrow' }, [
       button,
-      el('code', { text: this.value, title: this.value }),
+      el('code', { text: this.fingerprint(), title: this.value }),
+      // Renewing belongs BESIDE the link it renews. Offered once per row it
+      // could only ever mean one of the two — and it meant the edit one,
+      // silently, so a read link given to the wrong person could not be
+      // revoked from this page at all.
+      this.onRotate
+        ? el('button', {
+            type: 'button', class: 'link-renew', text: 'renew',
+            title: `Renew the ${this.label} link`,
+            onclick: this.onRotate,
+          })
+        : null,
     ]);
   }
 }
@@ -288,7 +319,13 @@ class CreateForm {
 }
 
 interface ProfileActions {
-  rotate: (profile: ProfileSummary) => void;
+  /**
+   * Renew one link. The MODE matters: the two links are independent, and the
+   * server has always been able to renew either — only the edit one was ever
+   * offered, so a read link handed to the wrong person could not be revoked
+   * from here at all.
+   */
+  rotate: (profile: ProfileSummary, mode: 'edit' | 'read') => void;
   remove: (profile: ProfileSummary) => void;
 }
 
@@ -307,11 +344,12 @@ class ProfileTable {
     replace(this.node, [table(
       [
         { label: 'CV', width: '13%' },
-        { label: 'access', width: '13%' },
-        { label: 'links', width: '21%' },
+        { label: 'access', width: '11%' },
+        { label: 'what it is', width: '17%' },
+        { label: 'links', width: '17%' },
         { label: 'size', width: '9%' },
-        { label: 'last change', width: '13%' },
-        { label: '', width: '31%' },
+        { label: 'changed', width: '12%' },
+        { label: '', width: '21%' },
       ],
       answer.profiles.map((p) => this.row(p)),
     )]);
@@ -330,18 +368,43 @@ class ProfileTable {
         }),
         ' ',
         el('span', { class: 'tag', text: p.languages.map((l) => l.lang).join(', ') }),
+        // An unreadable document looked exactly like a healthy one: same row,
+        // same size, same date. The one moment anybody scans this page is when
+        // something is wrong, and it was the one thing the page did not say.
+        p.ok ? null : el('span', {
+          class: 'tag broken', text: 'unreadable', title: p.problem ?? '',
+        }),
+        p.templateMissing ? el('span', {
+          class: 'tag broken', text: 'template missing',
+          title: `This CV was written for ${p.template}, which is not installed. `
+            + 'It will not render as its author last saw it.',
+        }) : null,
+      ]),
+      el('td', { class: 'what' }, [
+        // What the CV IS, not merely how big it is. A list of names and byte
+        // counts is an inventory of files; this is an inventory of CVs.
+        p.role ? el('div', { class: 'role', text: p.role }) : null,
+        el('div', { class: 'muted', text: [
+          p.template,
+          p.sections === undefined ? null : `${p.sections} sections`,
+          p.photo ? 'photo' : null,
+        ].filter(Boolean).join(' · ') }),
       ]),
       el('td', { class: 'links' }, [
-        new CopyField('edit', p.links.edit).render(),
-        new CopyField('read', p.links.read).render(),
+        new CopyField('edit', p.links.edit, () => this.actions.rotate(p, 'edit')).render(),
+        new CopyField('read', p.links.read, () => this.actions.rotate(p, 'read')).render(),
       ]),
       el('td', { class: 'size', text: `${show.bytes(p.bytes)} \u00b7 ${p.history} entries` }),
       el('td', { class: 'when', text: show.when(p.updatedAt) }),
       el('td', { class: 'actions' }, [
+        // The editor lives on the PUBLIC port and is opened by the edit token,
+        // which is exactly what this link already is. It was displayed to be
+        // copied and never offered as somewhere to go.
+        el('a', { class: 'tag', href: p.links.edit, target: '_blank', text: 'edit' }),
+        ' ',
         el('a', { class: 'tag', href: `/view/${p.slug}/cv.html`, target: '_blank', text: 'page' }),
         ' ',
         el('a', { class: 'tag', href: `/view/${p.slug}/cv.pdf`, target: '_blank', text: 'pdf' }),
-        el('button', { text: 'new edit link', onclick: () => this.actions.rotate(p) }),
         el('button', { class: 'danger', text: 'delete', onclick: () => this.actions.remove(p) }),
       ]),
     ];
@@ -460,14 +523,14 @@ class Admin {
     this.metrics = new MetricsPanel(need(root, '#metrics'), this.api);
 
     this.profiles = new ProfileTable(this.list, {
-      rotate: (p) => void this.act(
-        () => this.api.post(`/api/p/${p.slug}/links/rotate?mode=edit`),
-        `Renewed the edit link of “${p.name}”.`,
+      rotate: (p, mode) => void this.act(
+        () => this.api.post(`/api/p/${p.slug}/links/rotate?mode=${mode}`),
+        `Renewed the ${mode} link of “${p.name}”.`,
         {
-          title: 'Renew the edit link?',
+          title: `Renew the ${mode} link?`,
           body: 'The old link stops working immediately, for everyone. '
             + 'Whoever was using it will need the new one.',
-          target: `${p.name} — edit link`,
+          target: `${p.name} — ${mode} link`,
           confirm: 'Renew',
         }),
       remove: (p) => void this.act(

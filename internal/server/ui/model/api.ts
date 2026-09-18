@@ -253,6 +253,17 @@ export interface ProfileSummary {
   history: number;
   links: ProfileLinks;
   updatedAt?: string;
+
+  /** Whether the document could be read at all. See describeDocument. */
+  ok: boolean;
+  /** Why not, when it could not. */
+  problem?: string;
+  role?: string;
+  /** The template's title, or its bare identifier when it is not installed. */
+  template?: string;
+  templateMissing?: boolean;
+  sections?: number;
+  photo?: boolean;
 }
 
 export interface InventoryAnswer extends Answer {

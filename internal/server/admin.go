@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"picvert/internal/document"
+	"picvert/internal/engine"
 	"picvert/internal/favicon"
 	"picvert/internal/profiles"
 	"picvert/internal/security"
@@ -289,7 +291,54 @@ func (s *Server) describeProfile(p *profiles.Profile) map[string]any {
 	if info, err := os.Stat(p.JSONPath()); err == nil {
 		out["updatedAt"] = info.ModTime().UTC().Format(time.RFC3339)
 	}
+	s.describeDocument(p, out)
 	return out
+}
+
+// describeDocument says what the CV IS, and whether it can be read at all.
+//
+// The inventory used to report a size and a date for every CV and nothing
+// about its contents, which made a corrupt document look exactly like a
+// healthy one — the row is the same width whether the file parses or not. The
+// one moment somebody scans this page is when something is wrong, and it was
+// the one question the page could not answer.
+//
+// Read once, here, rather than by each caller: this is already paid for by
+// nameOf on the same document, and the page shows twenty-five of them.
+func (s *Server) describeDocument(p *profiles.Profile, out map[string]any) {
+	doc, err := engine.ReadDoc(p.JSONPath())
+	if err != nil {
+		// Named rather than swallowed. "unreadable" with no reason is a report
+		// that sends somebody to the shell to find out what this already knows.
+		out["ok"] = false
+		out["problem"] = err.Error()
+		return
+	}
+	out["ok"] = true
+	out["sections"] = len(document.Sections(doc))
+	if meta := document.Meta(doc); meta != nil {
+		// Resolved to its title, not left as the UUID the document carries. A
+		// document references its template by a stable identifier precisely so
+		// that renaming one does not break it — which makes the identifier the
+		// wrong thing to show a person, who has never seen it before and
+		// cannot tell two apart.
+		ref := document.Str(meta, "template")
+		if t := s.Registry.Find(ref); t != nil && t.Title != "" {
+			out["template"] = t.Title
+		} else if t != nil {
+			out["template"] = t.Name
+		} else if ref != "" {
+			// Unresolved is worth showing rather than hiding: it means the
+			// template this CV was written for is not installed, and the page
+			// it renders will not be the page its author last saw.
+			out["template"] = ref
+			out["templateMissing"] = true
+		}
+	}
+	if id, ok := document.Identity(doc); ok {
+		out["role"] = document.Str(id, "role")
+		out["photo"] = document.Str(id, "photo") != ""
+	}
 }
 
 // describeLinks turns two tokens into two addresses.
