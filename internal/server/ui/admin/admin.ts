@@ -10,6 +10,8 @@
  */
 
 import { HttpClient } from '../lib/http.ts';
+import { confirmDialog } from '../lib/dialog.ts';
+import { toast } from '../lib/toast.ts';
 import { copy, el, need, replace } from '../lib/dom.ts';
 import type { Child } from '../lib/dom.ts';
 import type {
@@ -28,6 +30,23 @@ const show = {
     if (!stamp) return '';
     const date = new Date(stamp);
     return Number.isNaN(date.valueOf()) ? stamp : date.toLocaleString();
+  },
+  /**
+   * How long is left, said the way a person would.
+   *
+   * A deleted CV is a thing with a deadline, and an absolute timestamp makes
+   * the reader do the subtraction — at the one moment they are already in a
+   * hurry, because something has gone missing.
+   */
+  left(stamp?: string): string {
+    if (!stamp) return '';
+    const ms = new Date(stamp).valueOf() - Date.now();
+    if (Number.isNaN(ms)) return '';
+    if (ms <= 0) return 'erased at the next sweep';
+    const hours = Math.floor(ms / 3_600_000);
+    if (hours < 1) return `${Math.max(1, Math.round(ms / 60_000))} min left`;
+    if (hours < 48) return `${hours} h left`;
+    return `${Math.floor(hours / 24)} days left`;
   },
 };
 
@@ -180,7 +199,7 @@ class CopyField {
 class CreateForm {
   constructor(
     private readonly api: HttpClient,
-    private readonly onCreated: () => void,
+    private readonly onCreated: (name: string) => void,
   ) {}
 
   render(): HTMLElement {
@@ -227,10 +246,13 @@ class CreateForm {
               new CopyField('edit', answer.profile.links.edit).render(),
             ]);
             note.className = 'help created';
+            // Read BEFORE the fields are cleared: taking it afterwards is
+            // reading an empty input and reporting that nothing was named.
+            const created = answer.profile.name || answer.profile.slug;
             slug.value = '';
             name.value = '';
             delete slug.dataset.touched;
-            this.onCreated();
+            this.onCreated(created);
           })
           .catch((error: unknown) => {
             note.textContent = error instanceof Error ? error.message : String(error);
@@ -332,8 +354,14 @@ interface TrashActions {
   purge: (entry: TrashEntry) => void;
 }
 
-/** TrashTable is what has been deleted and can still be caught. */
-class TrashTable {
+/**
+ * TrashList is what has been deleted and can still be caught.
+ *
+ * Cards rather than rows. A deleted CV is not an inventory entry to scan past;
+ * it is a thing with a deadline, and the deadline has to be readable without
+ * finding the right column and doing the subtraction.
+ */
+class TrashList {
   constructor(
     private readonly node: HTMLElement,
     private readonly actions: TrashActions,
@@ -344,36 +372,67 @@ class TrashTable {
       replace(this.node, [el('div', { class: 'empty', text: 'Nothing set aside.' })]);
       return;
     }
-    replace(this.node, [table(
-      [
-        { label: 'CV', width: '26%' },
-        { label: 'deleted', width: '18%' },
-        { label: 'erased', width: '18%' },
-        { label: 'size', width: '12%' },
-        { label: '', width: '26%' },
-      ],
-      entries.map((entry) => el('tr', {}, [
-        el('td', { class: 'who' }, [
-          el('div', { class: 'name', text: entry.name }),
-          el('code', { class: 'muted', text: entry.slug }),
-        ]),
-        el('td', { class: 'when', text: show.when(entry.deletedAt) }),
-        el('td', { class: 'when', text: show.when(entry.expiresAt) }),
-        el('td', { class: 'size', text: show.bytes(entry.bytes) }),
-        el('td', { class: 'actions' }, [
-          el('button', { text: 'restore', onclick: () => this.actions.restore(entry) }),
-          el('button', { class: 'danger', text: 'erase now',
-            onclick: () => this.actions.purge(entry) }),
-        ]),
-      ])),
-    )]);
+    replace(this.node, entries.map((entry) => this.card(entry)));
+  }
+
+  private card(entry: TrashEntry): HTMLElement {
+    // Past its expiry but still on disk: it goes at the next sweep, so it is
+    // still restorable — and saying so is the difference between catching it
+    // and assuming it has gone.
+    const due = new Date(entry.expiresAt).valueOf() <= Date.now();
+    return el('div', { class: `trashed${due ? ' due' : ''}` }, [
+      el('div', { class: 'head' }, [
+        el('h3', { text: entry.name }),
+        el('span', { class: 'slug', text: entry.slug }),
+        el('span', { class: 'left', text: show.left(entry.expiresAt) }),
+      ]),
+      el('p', { class: 'meta',
+        text: `deleted ${show.when(entry.deletedAt)} · ${show.bytes(entry.bytes)}` }),
+      el('div', { class: 'actions' }, [
+        el('button', { class: 'primary', text: 'Restore',
+          onclick: () => this.actions.restore(entry) }),
+        el('button', { class: 'danger', text: 'Erase now',
+          onclick: () => this.actions.purge(entry) }),
+      ]),
+    ]);
+  }
+}
+
+/**
+ * Views is the pair of tabs.
+ *
+ * The CVs and the trash are not looked at in the same motion: one is the
+ * current inventory, the other a safety net opened when something has gone
+ * missing. They were stacked, which padded the inventory with what nobody was
+ * looking for.
+ */
+class Views {
+  private readonly tabs: { button: HTMLButtonElement; panel: HTMLElement }[];
+
+  constructor(root: Document) {
+    this.tabs = [
+      { button: need<HTMLButtonElement>(root, '#tab-cvs'), panel: need(root, '#view-cvs') },
+      { button: need<HTMLButtonElement>(root, '#tab-trash'), panel: need(root, '#view-trash') },
+    ];
+    for (const [index, tab] of this.tabs.entries()) {
+      tab.button.addEventListener('click', () => this.select(index));
+    }
+  }
+
+  select(index: number): void {
+    for (const [i, tab] of this.tabs.entries()) {
+      const on = i === index;
+      tab.button.setAttribute('aria-selected', String(on));
+      tab.panel.hidden = !on;
+    }
   }
 }
 
 class Admin {
   private readonly api = new HttpClient();
   private readonly profiles: ProfileTable;
-  private readonly trash: TrashTable;
+  private readonly trash: TrashList;
+  private readonly views: Views;
 
   private readonly list: HTMLElement;
   private readonly trashNode: HTMLElement;
@@ -381,6 +440,8 @@ class Admin {
   private readonly count: HTMLElement;
   private readonly policy: HTMLElement;
   private readonly create: HTMLElement;
+  private readonly badgeCvs: HTMLElement;
+  private readonly badgeTrash: HTMLElement;
   private readonly metrics: MetricsPanel;
 
   private page = 1;
@@ -392,26 +453,48 @@ class Admin {
     this.count = need(root, '#count');
     this.policy = need(root, '#policy');
     this.create = need(root, '#create');
+    this.badgeCvs = need(root, '#badge-cvs');
+    this.badgeTrash = need(root, '#badge-trash');
 
+    this.views = new Views(root);
     this.metrics = new MetricsPanel(need(root, '#metrics'), this.api);
 
     this.profiles = new ProfileTable(this.list, {
       rotate: (p) => void this.act(
         () => this.api.post(`/api/p/${p.slug}/links/rotate?mode=edit`),
-        `Renew the edit link of “${p.name}”?\n\n` +
-        `Every copy already handed out stops working at once.`),
+        `Renewed the edit link of “${p.name}”.`,
+        {
+          title: 'Renew the edit link?',
+          body: 'The old link stops working immediately, for everyone. '
+            + 'Whoever was using it will need the new one.',
+          target: `${p.name} — edit link`,
+          confirm: 'Renew',
+        }),
       remove: (p) => void this.act(
         () => this.api.delete(`/api/p/${p.slug}`),
-        `Delete “${p.name}”?\n\n` +
-        `It is set aside first and can be restored until it expires.`),
+        `“${p.name}” was set aside.`,
+        {
+          title: 'Delete this CV?',
+          body: 'It is set aside first and can be restored until it expires. '
+            + 'Both private links stop working now.',
+          target: `${p.name} — ${p.slug}`,
+          confirm: 'Delete',
+        }),
     });
 
-    this.trash = new TrashTable(this.trashNode, {
+    this.trash = new TrashList(this.trashNode, {
       restore: (entry) => void this.act(
-        () => this.api.post(`/api/trash/${entry.slug}/restore`)),
+        () => this.api.post(`/api/trash/${entry.slug}/restore`),
+        `“${entry.name}” restored, with its original links.`),
       purge: (entry) => void this.act(
         () => this.api.delete(`/api/trash/${entry.slug}`),
-        `Erase “${entry.name}” for good?\n\nThis cannot be undone.`),
+        `“${entry.name}” erased.`,
+        {
+          title: 'Erase for good?',
+          body: 'The data is destroyed and exists nowhere else. This cannot be undone.',
+          target: `${entry.name} — ${entry.slug}`,
+          confirm: 'Erase permanently',
+        }),
     });
 
     let typing = 0;
@@ -426,10 +509,22 @@ class Admin {
       this.page += 1;
       void this.refresh();
     });
+
+    // The form is folded away until it is wanted: the inventory is what people
+    // come to this page to see, and a form above it pushed the list off the
+    // screen on every visit for the sake of the thing done least often.
+    need<HTMLButtonElement>(root, '#new').addEventListener('click', () => {
+      this.views.select(0);
+      this.create.hidden = !this.create.hidden;
+      if (!this.create.hidden) this.create.querySelector('input')?.focus();
+    });
   }
 
   start(): void {
-    this.create.appendChild(new CreateForm(this.api, () => void this.refresh()).render());
+    this.create.appendChild(new CreateForm(this.api, (name) => {
+      toast.show(`“${name}” created — hand over its edit link.`);
+      void this.refresh();
+    }).render());
     void this.refresh();
     void this.refreshTrash();
     void this.metrics.refresh();
@@ -438,15 +533,27 @@ class Admin {
     window.setInterval(() => void this.metrics.refresh(), 30_000);
   }
 
-  /** act performs something destructive, asks first, and refreshes after. */
-  private async act(run: () => Promise<unknown>, question?: string): Promise<void> {
-    if (question && !confirm(question)) return;
+  /**
+   * act performs something destructive, asks first, and says what happened.
+   *
+   * The question is a dialog rather than `confirm()`, which some browsers
+   * suppress when the page is not focused — a deletion then appears to do
+   * nothing at all. The answer is a toast rather than `alert()`, which
+   * interrupts to report what was usually expected.
+   */
+  private async act(
+    run: () => Promise<unknown>,
+    done: string,
+    question?: Parameters<typeof confirmDialog>[0],
+  ): Promise<void> {
+    if (question && !await confirmDialog(question)) return;
     try {
       await run();
+      toast.show(done);
       await this.refresh();
       await this.refreshTrash();
     } catch (error) {
-      alert(error instanceof Error ? error.message : String(error));
+      toast.failure(error);
     }
   }
 
@@ -459,6 +566,7 @@ class Admin {
       this.page = answer.page;
       this.policy.textContent = `published: ${answer.policy}`;
       this.count.textContent = `${answer.total} CV(s) — page ${answer.page}/${answer.pages}`;
+      this.badgeCvs.textContent = String(answer.total);
       this.profiles.show(answer);
     } catch (error) {
       replace(this.list, [el('div', { class: 'empty',
@@ -469,8 +577,14 @@ class Admin {
   private async refreshTrash(): Promise<void> {
     try {
       const answer = await this.api.get<TrashAnswer>('/api/trash');
-      this.trash.show(answer.entries ?? []);
+      const entries = answer.entries ?? [];
+      this.badgeTrash.textContent = String(entries.length);
+      // Marked from the other view: this is the only place a CV can be caught
+      // back, and the clock on it is running.
+      this.badgeTrash.classList.toggle('pending', entries.length > 0);
+      this.trash.show(entries);
     } catch (error) {
+      this.badgeTrash.textContent = '?';
       replace(this.trashNode, [el('div', { class: 'empty',
         text: error instanceof Error ? error.message : String(error) })]);
     }

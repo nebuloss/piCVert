@@ -30,33 +30,43 @@
 <main>
   <section id="metrics" aria-label="What the service is doing"></section>
 
-  <section class="panel" aria-labelledby="create-h">
-    <h2 id="create-h">Make a CV</h2>
-    <p class="lede">
-      Its edit link appears once, here. That link is the only way into the CV:
-      there is no account and nothing to recover it with.
-    </p>
-    <div id="create"></div>
-  </section>
+  <!-- Two views, never stacked.
+       The CVs and the trash are not looked at in the same motion: one is the
+       current inventory, the other a safety net opened when something has
+       gone missing. Stacking them padded the inventory with what nobody was
+       looking for. -->
+  <nav class="views" role="tablist" aria-label="Views">
+    <button class="view-tab" id="tab-cvs" role="tab" aria-selected="true"
+            aria-controls="view-cvs">
+      CVs <span class="badge" id="badge-cvs">—</span>
+    </button>
+    <button class="view-tab" id="tab-trash" role="tab" aria-selected="false"
+            aria-controls="view-trash">
+      Set aside <span class="badge" id="badge-trash">—</span>
+    </button>
+  </nav>
 
-  <section class="panel" aria-labelledby="cvs-h">
-    <h2 id="cvs-h">CVs</h2>
-    <p class="lede">Everything on this service, published or reachable by link only.</p>
-
+  <section id="view-cvs" role="tabpanel" aria-labelledby="tab-cvs">
     <div class="bar">
-      <input type="search" id="q" placeholder="Search a CV" aria-label="Search">
-      <span class="spacer"></span>
+      <input type="search" id="q" placeholder="Search by name or identifier"
+             aria-label="Search" autocomplete="off" spellcheck="false">
       <span class="muted" id="count"></span>
       <button id="prev" title="Previous page" aria-label="Previous page">‹</button>
       <button id="next" title="Next page" aria-label="Next page">›</button>
+      <button class="primary" id="new">+ New CV</button>
     </div>
+
+    <!-- Folded away until it is wanted: the inventory is what people come to
+         see, and a form above it pushed the list off the screen. -->
+    <section class="panel" id="create" hidden aria-label="Create a CV"></section>
+
     <div id="list"></div>
   </section>
 
-  <section class="panel" aria-labelledby="trash-h">
-    <h2 id="trash-h">Set aside</h2>
+  <section id="view-trash" role="tabpanel" aria-labelledby="tab-trash" hidden>
     <p class="lede">
-      Deleted CVs wait here before being erased for good, so a mistake can be undone.
+      Deleted CVs wait here before being erased for good, so a mistake can be
+      undone. Each shows how long is left.
     </p>
     <div id="trash"></div>
   </section>

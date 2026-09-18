@@ -175,15 +175,86 @@ form.create .help.created {
 }
 form.create .help.created strong { display: block; margin-bottom: 6px; }
 
+/* --- the two views ------------------------------------------------------- */
+
+/* Tabs, not stacked sections. The CVs and the trash are not looked at in the
+   same motion, and stacking them padded the inventory with what nobody was
+   looking for. */
+.views {
+  display: flex; gap: 4px; margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.view-tab {
+  font: inherit; font-size: 14px; font-weight: 550;
+  border: 0; background: none; color: var(--dim);
+  padding: 10px 16px; cursor: pointer;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  display: flex; align-items: center; gap: 8px;
+}
+.view-tab:hover { background: var(--sunk); color: var(--ink); }
+.view-tab[aria-selected="true"] {
+  color: var(--accent); border-bottom-color: var(--accent); font-weight: 650;
+}
+.badge {
+  font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px;
+  background: var(--sunk); color: var(--dim); border: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.view-tab[aria-selected="true"] .badge {
+  background: var(--accent-soft); color: var(--accent); border-color: transparent;
+}
+/* A full trash announces itself FROM THE OTHER VIEW: it is the only place a
+   deleted CV can be caught back, and the clock on it is running.
+ 
+   Scoped to the unselected tab on purpose. Written as a bare `.badge.pending`
+   it lost to `.view-tab[aria-selected="true"] .badge` on specificity, so the
+   one badge that was supposed to stand out was the only one that did not —
+   and it stood out least exactly when the trash tab was already open, which
+   is when the warning is least needed anyway. */
+.view-tab[aria-selected="false"] .badge.pending {
+  background: var(--accent-soft); color: var(--accent);
+  border-color: var(--accent-line); font-weight: 700;
+}
+
+#view-trash > .lede { margin: 0 0 16px; color: var(--dim); font-size: 13px; }
+
+/* --- what is set aside --------------------------------------------------- */
+
+/* Cards rather than a row in a table. A deleted CV is not an inventory entry
+   to scan past — it is a thing with a deadline, and the deadline has to be
+   legible without hunting for a column. */
+.trashed {
+  background: var(--accent-soft); border: 1px solid var(--accent-line);
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px;
+}
+.trashed.due { background: color-mix(in srgb, var(--warn) 12%, var(--card)); }
+.trashed .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.trashed .head h3 { font-size: 15px; font-weight: 650; margin: 0; color: var(--accent); }
+.trashed.due .head h3 { color: var(--warn); }
+.trashed .slug {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  color: var(--dim); background: var(--card);
+  padding: 2px 8px; border-radius: 8px;
+}
+.trashed .left { font-size: 12px; font-weight: 650; color: var(--accent); margin-left: auto; }
+.trashed.due .left { color: var(--warn); }
+.trashed .meta { font-size: 12px; color: var(--dim); margin: 6px 0 12px; }
+.trashed .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* --- the search and pager ------------------------------------------------ */
 
 .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
 .bar input[type="search"] { min-width: 240px; }
-.bar button {
-  width: 30px; height: 30px; padding: 0;
+/* The pager arrows only. Named rather than "every button in the bar": the
+   create button lives here too, and a square 30px rule turned it into a circle
+   with its label spilling out of both sides. */
+.bar #prev, .bar #next {
+  width: 30px; height: 30px; padding: 0; flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 16px; line-height: 1;
 }
+.bar #new { flex: 0 0 auto; margin-left: 4px; }
 
 /* --- tables -------------------------------------------------------------- */
 
