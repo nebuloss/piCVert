@@ -171,7 +171,20 @@ func writeArchive(w io.Writer, data string) (int64, int, error) {
 func rotate(newest string, keep int) error {
 	dir := filepath.Dir(newest)
 	base := filepath.Base(newest)
-	prefix := base[:strings.Index(base+"-", "-")+1]
+
+	// Everything up to the first "-", which is what a dated name has before its
+	// date. A name with no dash at all — `t.tar.gz`, or anything somebody chose
+	// — has no prefix to match on, and the whole name is used instead.
+	//
+	// This was `base[:strings.Index(base+"-", "-")+1]`, which appends a dash so
+	// that Index always finds one. It does, at the END, and the slice then runs
+	// one past the string: `picvert backup --out t.tar.gz --keep 14` panicked
+	// with "slice bounds out of range". Found by running a backup with a name
+	// that was not the default one.
+	prefix := base
+	if at := strings.Index(base, "-"); at >= 0 {
+		prefix = base[:at+1]
+	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
