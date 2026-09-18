@@ -157,6 +157,17 @@ interface Column {
  * dropped by others, so the corners were square on exactly one machine.
  */
 function table(columns: Column[], rows: HTMLElement[]): HTMLElement {
+  // Each cell carries its column's name. On a narrow screen the table becomes
+  // a list of cards, and a value with no header above it is a number nobody
+  // can identify — "6 kB · 0 entries" means nothing on its own. The label is
+  // drawn from this same array, so a renamed column cannot disagree with
+  // itself in the two layouts.
+  for (const row of rows) {
+    row.querySelectorAll('td').forEach((cell, i) => {
+      const label = columns[i]?.label;
+      if (label) cell.dataset.label = label;
+    });
+  }
   return el('div', { class: 'tablewrap' }, [
     el('table', {}, [
       el('colgroup', {}, columns.map((c) => el('col', { style: `width:${c.width}` }))),
@@ -188,9 +199,6 @@ class CopyField {
    * which is the same eight characters on every row of every CV — a column
    * carrying no information at all. The token is the part that differs, and
    * seeing it change is how one confirms a renewal actually happened.
-   *
-   * The whole link is still one click away on the button, and under the
-   * pointer as a tooltip.
    */
   private fingerprint(): string {
     const token = this.value.match(/\/e\/([^/]+)/)?.[1];
@@ -198,19 +206,30 @@ class CopyField {
   }
 
   render(): HTMLElement {
-    const button = el('button', {
+    const copyButton = el('button', {
       type: 'button', class: 'link-copy', title: `Copy the ${this.label} link`,
-      text: this.label,
+      text: 'copy',
       onclick: () => {
         void copy(this.value).then((done) => {
-          button.textContent = done ? 'copied' : 'select it';
-          window.setTimeout(() => { button.textContent = this.label; }, 1500);
+          copyButton.textContent = done ? 'copied' : 'select it';
+          window.setTimeout(() => { copyButton.textContent = 'copy'; }, 1500);
         });
       },
     });
+
     return el('div', { class: 'linkrow' }, [
-      button,
+      el('span', { class: 'link-label', text: this.label }),
       el('code', { text: this.fingerprint(), title: this.value }),
+      copyButton,
+      // BOTH, always. A link is either handed to somebody else or followed
+      // oneself, and the page offered only the first — so seeing what a CV
+      // actually looks like meant copying an address and pasting it into
+      // another tab. On a phone that is several deliberate actions to do the
+      // most obvious thing on the page.
+      el('a', {
+        class: 'link-open', href: this.value, target: '_blank', rel: 'noopener',
+        title: `Open the ${this.label} link`, text: 'open',
+      }),
       // Renewing belongs BESIDE the link it renews. Offered once per row it
       // could only ever mean one of the two — and it meant the edit one,
       // silently, so a read link given to the wrong person could not be

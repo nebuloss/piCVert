@@ -321,14 +321,26 @@ td.actions { line-height: 2.1; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   min-width: 0;
 }
-button.link-copy, button.link-renew {
+.link-label {
+  font-size: 10.5px; font-weight: 650; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--faint);
+  width: 26px; flex: 0 0 auto;
+}
+button.link-copy, button.link-renew, a.link-open {
   padding: 1px 9px; font-size: 11px; flex: 0 0 auto;
   background: var(--sunk); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 999px;
+  cursor: pointer; text-decoration: none; line-height: 1.7;
 }
-/* Shown on hover or focus, not always. Renewing breaks every copy of a link
-   already handed out, and a button that destructive sitting permanently
-   beside a copy button is a mis-click waiting to happen. Focus-within keeps
-   it reachable by keyboard, where hover does not exist. */
+a.link-open:hover, button.link-copy:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Renewing is shown on hover or focus, not always: it breaks every copy of a
+   link already handed out, and a button that destructive sitting permanently
+   beside "copy" is a mis-click waiting to happen. Focus-within keeps it
+   reachable by keyboard, where hover does not exist.
+
+   On a touch screen there is no hover at all, so it is simply always there —
+   see the narrow-screen rules at the foot of this file. */
 button.link-renew { opacity: 0; transition: opacity .12s; }
 .linkrow:hover button.link-renew,
 .linkrow:focus-within button.link-renew { opacity: 1; }
@@ -416,9 +428,104 @@ a.tag:hover { border-color: var(--accent); color: var(--accent); }
 
 /* --- narrow screens ------------------------------------------------------ */
 
-@media (max-width: 760px) {
-  main { padding: 18px 12px 48px; }
+/* --- narrow screens ------------------------------------------------------
+ *
+ * The table STOPS BEING A TABLE.
+ *
+ * Seven columns of fixed percentage widths at 375 px gives each about fifty
+ * pixels: names were clipped to "J…", the headers ran into each other, and
+ * the row's buttons — including `delete` — sat 157 px past the right edge,
+ * invisible and unreachable. Measured, not guessed.
+ *
+ * Squeezing further was not the answer. A row becomes a card, each value
+ * labelled with the column it came from, and the things one does to a CV
+ * become a row of buttons big enough for a thumb.
+ */
+@media (max-width: 860px) {
+  main { padding: 16px 12px 48px; }
   .panel { padding: 15px 14px; }
-  td.links { width: auto; }
-  .bar input[type="search"] { min-width: 0; flex: 1 1 auto; }
+
+  .bar { flex-wrap: wrap; }
+  .bar input[type="search"] { order: -1; width: 100%; min-width: 0; }
+  .bar #new { margin-left: auto; }
+
+  /* The header row is what the cards' own labels replace. */
+  .tablewrap { border: 0; border-radius: 0; overflow: visible; }
+  table, thead, tbody, tr, td { display: block; }
+  colgroup { display: none; }
+  /* Not merely clipped. A visually-hidden <thead> still LAYS OUT: its cells
+     kept their widths, reported as sticking 100 px past the viewport, and on
+     a browser that ignores clip-path they would be visible gibberish above
+     the cards. The labels survive as each cell's ::before, so nothing is lost
+     by removing the row entirely. */
+  thead { display: none; }
+
+  tbody tr {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  tbody tr:hover { background: var(--card); }
+
+  td { border: 0; padding: 0; }
+  /* The label the cell carried through from its column. */
+  td[data-label]:not(:empty)::before {
+    content: attr(data-label);
+    display: block; margin-bottom: 2px;
+    font-size: 10px; font-weight: 650; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--faint);
+  }
+  td:not(:empty) { margin-bottom: 12px; }
+  td:empty { display: none; }
+
+  /* The name leads, and needs no label saying "CV" above it. */
+  td.who::before { display: none; }
+  td.who { white-space: normal; }
+  td.who .name { font-size: 16px; overflow: visible; white-space: normal; }
+  td.who code { overflow: visible; white-space: normal; }
+
+  td.what .role { white-space: normal; }
+  td.links { width: auto; overflow: visible; }
+  .linkrow { flex-wrap: wrap; }
+  .linkrow code { flex: 1 1 100%; order: 3; }
+  /* No hover on a touch screen, so a control that appears on hover is a
+     control that does not exist. */
+  button.link-renew { opacity: 1; }
+
+  /* Big enough for a thumb, and on one line that wraps rather than one that
+     runs off the edge. */
+  td.actions {
+    text-align: left; white-space: normal;
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding-top: 4px; border-top: 1px solid var(--line); margin-bottom: 0;
+  }
+  td.actions::before { flex: 1 1 100%; }
+  td.actions > * { margin-left: 0; }
+  td.actions::before { display: none; }
+  td.actions button, td.actions .tag {
+    padding: 9px 16px; font-size: 13px; line-height: 1.4; text-align: center;
+  }
+  /* Destructive, and it must not look like the three beside it. On the wide
+     layout hovering says so; a thumb cannot hover. */
+  td.actions button.danger {
+    border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+    color: var(--warn);
+  }
+
+  /* Two across rather than seven; below that the numbers are wider than the
+     column they sit in. */
+  .metrics { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+
+  .caution { padding: 8px 12px; }
+  .trashed .left { margin-left: 0; flex: 1 1 100%; }
+}
+
+/* The narrowest phones still in use. */
+@media (max-width: 420px) {
+  .topbar { padding: 10px 12px; }
+  .topbar .where { display: none; }
+  /* The publication policy is a detail; the warning above is not, and on a
+     375 px bar they competed for the same line. */
+  .topbar #policy { display: none; }
+  td.actions button, td.actions .tag { flex: 1 1 calc(50% - 4px); text-align: center; }
 }
