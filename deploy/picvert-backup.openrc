@@ -9,10 +9,19 @@
 # filling up on a schedule, which takes the service down with it and is a worse
 # failure than having no backup at all.
 #
-# --out rather than a working directory. Changing directory first meant the
-# backup looked for the CVs relative to where it was writing, and reported "no
-# data directory at .../backups/data" — the command reads its configuration for
-# where the CVs are, and that path is absolute.
+# # TWO THINGS THAT BOTH LOOK LIKE NOTHING
+#
+# The output is NAMED rather than reached by changing directory first. Changing
+# directory meant the command looked for the CVs relative to where it was
+# writing, and reported "no data directory" at a path inside the backups folder.
+#
+# And it starts in a directory the service account can read. `su` leaves the
+# working directory where it was — root's, usually — and the first thing the
+# command does is resolve a relative path, which fails with "stat .: permission
+# denied" and names nothing that would lead anybody to this line.
 set -eu
+
+DATA=/var/lib/picvert
 exec su picvert -s /bin/sh -c \
-  '/opt/picvert/picvert backup --out "/var/lib/picvert/backups/picvert-$(date +%Y-%m-%d).tar.gz" --keep 14'
+  "cd '$DATA' && exec /opt/picvert/picvert backup \
+     --out '$DATA/backups/picvert-\$(date +%Y-%m-%d).tar.gz' --keep 14"
