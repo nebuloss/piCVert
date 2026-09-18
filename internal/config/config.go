@@ -105,26 +105,37 @@ type Config struct {
 type Admin struct {
 	Listen string `yaml:"listen"`
 
-	// Password is a HASH, never a password. See password.go — `picvert passwd`
-	// prints one to paste here.
+	// Password is a HASH, and is NOT a setting in this file.
 	//
-	// # THIS CHANGES A DESIGN DECISION, DELIBERATELY
+	// `yaml:"-"` on purpose. It is filled in from .admin-password in the data
+	// directory, written by `picvert passwd`, and there is no other way to set
+	// it. A password is not configuration: nobody hand-writes a PBKDF2 hash,
+	// nobody reviews one in a diff, and nobody wants one in the file they
+	// paste into a bug report.
 	//
-	// The admin port has no access control by design: what protects it is that
-	// it is not reachable from outside, and this file has said in several
-	// places that a password would make it the one surface here worth
-	// attacking.
+	// # WHY THERE IS EXACTLY ONE SOURCE
 	//
-	// That reasoning holds for a service where the port is not exposed, and it
-	// is still the default: empty means no password and no login page, exactly
-	// as before. What it does not cover is somebody who WANTS the port
-	// reachable — over a VPN, through a proxy, from another machine — and for
-	// them "do not do that" is advice they will ignore rather than follow.
+	// There were three: this field, PICVERT_ADMIN_PASSWORD, and the stored
+	// file, resolved in that order so a generated configuration could win.
+	// That order was defensible and it produced the worst bug this service has
+	// had — `picvert passwd` reported success, the operator restarted, and the
+	// old password still worked, because a line left in the configuration by
+	// the installer was quietly winning. Nothing pointed at it.
 	//
-	// So: a password is defence in depth when the port is private, and the
-	// thing that makes exposing it merely unwise rather than reckless. It is
-	// not permission to proxy it to the internet.
-	Password string `yaml:"password"`
+	// The fix for "which of the three is in force" is not a better error
+	// message. It is one source. Anybody templating a configuration calls
+	// `picvert passwd --stdin`, which is a line of provisioning either way.
+	//
+	// # THE DESIGN DECISION THIS STILL CHANGES
+	//
+	// The admin port has no access control by design: what protects it is not
+	// being reachable, and this file says in several places that a password
+	// would make it the one surface here worth attacking. That holds while the
+	// port is private, and it is still the default — nothing stored means no
+	// password and no login page. It does not cover somebody who WANTS the
+	// port reachable, and for them "do not do that" is advice they will ignore
+	// rather than follow.
+	Password string `yaml:"-"`
 
 	// Session is how long a login lasts.
 	Session time.Duration `yaml:"session"`
@@ -294,6 +305,24 @@ func Load(path string) (Config, error) {
 			decoder := yaml.NewDecoder(strings.NewReader(string(raw)))
 			decoder.KnownFields(true)
 			if err := decoder.Decode(&c); err != nil {
+				// One key gets its own message, because exactly one key used
+				// to be valid here and is not any more. Every machine
+				// installed before this change has that line, so this is the
+				// upgrade path rather than a corner case — and the decoder's
+				// own words for it are "field password not found in type
+				// config.Admin", which names a Go type at somebody holding a
+				// YAML file.
+				if strings.Contains(err.Error(), "field password not found") {
+					return c, fmt.Errorf("%s has a `password:` line under `admin:`, "+
+						"which is no longer a setting.\n\n"+
+						"The password is set with `picvert passwd` and stored beside "+
+						"the CVs. Delete that line:\n\n"+
+						"  sudo sed -i '/^  password:/d' %s\n"+
+						"  sudo picvert passwd\n\n"+
+						"Refused rather than ignored: a password that is read from one "+
+						"place and\nwritten to another is a password change that "+
+						"silently does nothing.", path, path)
+				}
 				return c, fmt.Errorf("%s: %w", path, err)
 			}
 		case os.IsNotExist(err):
@@ -308,20 +337,10 @@ func Load(path string) (Config, error) {
 
 	c.overrideFromEnv()
 
-	// The stored password fills in only what nothing else set, so the
-	// precedence reads the way every other setting here does:
-	//
-	//   PICVERT_ADMIN_PASSWORD   the deployment
-	//   admin.password           the file a person wrote
-	//   .admin-password          what `picvert passwd` last stored
-	//
-	// Last rather than first because a hash generated months ago must not
-	// quietly override the one somebody has just templated into the config.
-	// `picvert passwd` says so when it is about to be shadowed, rather than
-	// leaving a new password that appears not to work.
-	if c.Admin.Password == "" {
-		c.Admin.Password = ReadPasswordFile(c.ResolvedDataDir())
-	}
+	// The one and only source. Not "if nothing else set it": there is nothing
+	// else. See Admin.Password for why that is worth more than the
+	// flexibility it costs.
+	c.Admin.Password = ReadPasswordFile(c.ResolvedDataDir())
 
 	return c, c.check()
 }
@@ -370,7 +389,6 @@ func (c *Config) overrideFromEnv() {
 	str("PICVERT_PUBLIC_URL", &c.Domain) // the name this used to have
 	str("PICVERT_ADDR", &c.Listen)
 	str("PICVERT_ADMIN_ADDR", &c.Admin.Listen)
-	str("PICVERT_ADMIN_PASSWORD", &c.Admin.Password)
 	str("PICVERT_TURNSTILE_SITE_KEY", &c.Turnstile.SiteKey)
 	str("PICVERT_TURNSTILE_SECRET", &c.Turnstile.Secret)
 	str("PICVERT_DATA", &c.DataDir)
@@ -417,9 +435,13 @@ func (c *Config) check() error {
 		c.Domain = strings.TrimRight(c.Domain, "/")
 	}
 	if c.Admin.Password != "" && !IsHash(c.Admin.Password) {
-		return fmt.Errorf(
-			"admin.password is not a hash — it looks like a plaintext password.\n" +
-				"Run `picvert passwd` and paste what it prints")
+		// Only reachable if the stored file was edited by hand. Refused rather
+		// than ignored: a plaintext password sitting there would otherwise be
+		// compared against as though it were a hash, and never match, leaving
+		// somebody locked out with a file that looks correct.
+		return fmt.Errorf("%s does not contain a hash.\n"+
+			"Delete it and run `picvert passwd`",
+			PasswordFile(c.ResolvedDataDir()))
 	}
 	if c.Turnstile.SiteKey != "" && c.Turnstile.Secret == "" {
 		return fmt.Errorf("turnstile.site-key is set without turnstile.secret — " +

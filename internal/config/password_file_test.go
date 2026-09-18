@@ -22,7 +22,6 @@ func TestAStoredPasswordIsTheOneTheServiceUses(t *testing.T) {
 	}
 
 	t.Setenv("PICVERT_DATA", dir)
-	t.Setenv("PICVERT_ADMIN_PASSWORD", "")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatal(err)
@@ -78,38 +77,55 @@ func TestOnlyAHashIsStored(t *testing.T) {
 	}
 }
 
-// What is written down by hand beats what was generated.
+// A password in the configuration file is REFUSED, loudly.
 //
-// Some deployments template picvert.yaml out of Ansible or a Nix module. A
-// hash generated on the box months ago must not quietly win over the one that
-// is under version control.
-func TestTheConfiguredPasswordWinsOverTheStoredOne(t *testing.T) {
+// There used to be three ways to set this, resolved in an order — the
+// environment, then this file, then the stored file. That produced the worst
+// bug this service has had: `picvert passwd` reported success, the operator
+// restarted, and the old password still worked, because a line the installer
+// had left in the configuration was quietly winning. Nothing anywhere pointed
+// at it.
+//
+// So the key is not merely ignored now, it does not exist. The YAML decoder
+// runs with KnownFields, which turns a leftover `password:` into a refusal to
+// start, naming the line — rather than a setting that silently does nothing,
+// which is the failure that was so expensive the first time.
+func TestAPasswordInTheConfigurationFileIsRefused(t *testing.T) {
 	dir := t.TempDir()
-	stored, _ := Hash("the stored one")
-	if _, err := WritePasswordFile(dir, stored); err != nil {
-		t.Fatal(err)
-	}
-	written, _ := Hash("the written one")
-
+	hash, _ := Hash("the one in the file")
 	file := filepath.Join(dir, "picvert.yaml")
-	body := "admin:\n  password: \"" + written + "\"\n"
+	body := "admin:\n  password: \"" + hash + "\"\n"
 	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-
 	t.Setenv("PICVERT_DATA", dir)
-	t.Setenv("PICVERT_ADMIN_PASSWORD", "")
-	cfg, err := Load(file)
-	if err != nil {
-		t.Fatal(err)
+
+	_, err := Load(file)
+	if err == nil {
+		t.Fatal("a password in the configuration file was accepted — it would " +
+			"either win silently or do nothing silently, and both have bitten")
 	}
-	if cfg.Admin.Password != written {
-		t.Fatal("the stored password overrode the one in the configuration file")
+	// The message is for somebody holding a YAML file, not a Go developer.
+	// The decoder's own words are "field password not found in type
+	// config.Admin", and every machine installed before this change has that
+	// line — so this message IS the upgrade path.
+	for _, wanted := range []string{"password:", "picvert passwd", file} {
+		if !strings.Contains(err.Error(), wanted) {
+			t.Fatalf("the message is missing %q: %v", wanted, err)
+		}
+	}
+	if strings.Contains(err.Error(), "config.Admin") {
+		t.Fatalf("the message names a Go type at somebody editing YAML: %v", err)
 	}
 }
 
-// And the environment beats both, as it does for every other setting.
-func TestTheEnvironmentWinsOverTheStoredPassword(t *testing.T) {
+// And the environment cannot set it either.
+//
+// Every other setting here is overridable by environment, because a container
+// is configured that way. This one is not, and that asymmetry is the point:
+// the password has one home, and a variable that overrode it would be a second
+// source nobody could see from the machine.
+func TestTheEnvironmentCannotSetThePassword(t *testing.T) {
 	dir := t.TempDir()
 	stored, _ := Hash("the stored one")
 	if _, err := WritePasswordFile(dir, stored); err != nil {
@@ -123,8 +139,36 @@ func TestTheEnvironmentWinsOverTheStoredPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Admin.Password != injected {
-		t.Fatal("the stored password overrode the environment")
+	if cfg.Admin.Password != stored {
+		t.Fatal("the environment set the password — there is supposed to be " +
+			"exactly one way to do that")
+	}
+}
+
+// Removing the stored file removes the password.
+//
+// With one source this is simply true, and it is what makes the state
+// recoverable: whatever went wrong, deleting one file returns the service to
+// having no administration password, which the port refuses to come up with
+// unless it is bound locally. There is no second place to look.
+func TestDeletingTheFileRemovesThePassword(t *testing.T) {
+	dir := t.TempDir()
+	stored, _ := Hash("a long enough password")
+	file, err := WritePasswordFile(dir, stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PICVERT_DATA", dir)
+
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Admin.Password != "" {
+		t.Fatal("the password survived the file being deleted")
 	}
 }
 
@@ -133,7 +177,6 @@ func TestTheEnvironmentWinsOverTheStoredPassword(t *testing.T) {
 func TestNoStoredPasswordIsNotAnError(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PICVERT_DATA", dir)
-	t.Setenv("PICVERT_ADMIN_PASSWORD", "")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("a missing password file was treated as a failure: %v", err)

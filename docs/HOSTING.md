@@ -159,21 +159,29 @@ printf '%s\n' 'the new password' | sudo picvert passwd --stdin
 Never as an argument: an argument is in the shell history, in the process list,
 and in the logs of anything watching either.
 
-### When the configuration file is generated for you
+### Provisioning it from a script
 
-If `picvert.yaml` comes out of Ansible, a Nix module or anything else that
-templates a hash in, set `admin.password` there and it wins over anything
-`picvert passwd` stored — so a hash under version control is never quietly
-replaced by one generated on the machine. `--print` produces one to template:
+One line, and the same one whether the machine is being built by Ansible, a Nix
+module, a Dockerfile or a shell script:
 
 ```sh
-picvert passwd --print          # writes the hash to stdout, stores nothing
+printf '%s\n' "$PASSWORD" | picvert passwd --stdin
 ```
 
-The order, highest first: `PICVERT_ADMIN_PASSWORD`, then `admin.password` in
-the file, then what `picvert passwd` stored. When the first two would shadow
-what it just saved, `picvert passwd` says so rather than leaving you with a new
-password that appears not to work.
+There is no `admin.password` setting and no `PICVERT_ADMIN_PASSWORD` variable.
+That is the only way to set it.
+
+The restriction is deliberate, and it was learnt the expensive way. All three
+used to work, resolved in that order — and the result was a password change
+that reported success, said it would take effect on restart, and did nothing,
+because a line the installer had left in `picvert.yaml` went on winning. Every
+message said it had worked. Nothing anywhere named the file.
+
+A better error message was not the fix. One source was.
+
+If you are upgrading and `picvert.yaml` still has a `password:` line under
+`admin:`, piCVert refuses to start and tells you to delete it — rather than
+ignoring it, which would be the same silent failure wearing different clothes.
 
 It takes effect on restart, and that restart signs out everyone currently
 signed in.

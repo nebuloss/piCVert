@@ -100,11 +100,10 @@ func usage() {
   picvert config
         Prints what the service is configured with, and where it came from.
 
-  picvert passwd [--stdin] [--print]
+  picvert passwd [--stdin]
         Sets the password for the administration interface. It is stored
-        beside the CVs, not in picvert.yaml, so there is nothing to copy.
-        --print writes the hash to stdout and stores nothing, for a
-        configuration managed somewhere else.
+        beside the CVs, and that is the only place it can be set — there
+        is nothing to copy and nowhere to paste it wrong.
 
   picvert version
 

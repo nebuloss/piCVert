@@ -43,29 +43,36 @@ admin:
   # because that machine is a container.
   #
   # It manages every CV and shows every private link on the service, so being
-  # reachable makes the password below mandatory rather than optional.
+  # reachable makes a password mandatory rather than optional.
   #
   # Reach it over SSH:  ssh -L 3001:127.0.0.1:3001 your-host
   listen: "0.0.0.0:3001"
 
-  # A PASSWORD HASH, never a password.
+  # THE PASSWORD IS NOT SET HERE. There is no `password:` key.
   #
-  # You usually do not set this at all: `picvert passwd` stores the password
-  # with the CVs, where it needs no copying and this file stays untouched.
+  # It is set with `picvert passwd`, which stores it beside the CVs. That is
+  # the only way, and the restriction is the feature: this used to be settable
+  # here, in the environment, and by that command, resolved in that order — and
+  # the result was a password change that reported success and did nothing,
+  # because a line left in this file by the installer went on winning. Nothing
+  # pointed at it.
   #
-  # Set it here only when this file is generated for you — by Ansible, by a Nix
-  # module, by anything templating a hash in. What is written here WINS over
-  # what `picvert passwd` stored, so a hash under version control is never
-  # quietly replaced by one generated on the machine.
+  # A generated hash is not configuration anyway: nobody writes one by hand,
+  # nobody reviews one in a diff, and nobody wants one in the file they paste
+  # into a bug report.
   #
-  # Required, because the port above is reachable from the network: piCVert
-  # refuses to start otherwise. What used to protect this port was that nobody
-  # could reach it, and binding it wider removes exactly that.
+  # Provisioning it from a script is one line:
   #
-  # deploy/install.sh generates one at install time and prints it once.
-  password: ""
-
-  # To keep it off the network entirely instead:
+  #   printf '%s\n' "$PASSWORD" | picvert passwd --stdin
+  #
+  # If you still have a `password:` line here from an older install, piCVert
+  # will refuse to start and name it. Delete the line and run `picvert passwd`.
+  #
+  # The port above is reachable from the network, so a password IS required:
+  # piCVert refuses to start without one. deploy/install.sh sets one at install
+  # time and prints it once.
+  #
+  # To keep the port off the network entirely instead:
   #
   #   listen: "127.0.0.1:3001"     and reach it over an SSH tunnel
   #   listen: ""                   and use `picvert new` from a shell
@@ -74,15 +81,6 @@ admin:
   # password. A LAN has other machines on it — a laptop, a phone, a printer,
   # another container — and the private links this page displays are the only
   # credentials this service has.
-
-  # A PASSWORD HASH, never a password. Run `picvert passwd` and paste what it
-  # prints. piCVert refuses to start if this looks like plaintext.
-  #
-  # Empty means no login, which is the default and is right for the normal
-  # arrangement: the port is protected by not being reachable from outside.
-  # Set this if you intend to reach it over a VPN or a tunnel — it is defence
-  # in depth, NOT permission to proxy this port to the internet.
-  # password: "pbkdf2-sha256$600000$...$..."
 
   # How long a login lasts. The signing key is made at startup and never
   # written down, so a restart signs everybody out.

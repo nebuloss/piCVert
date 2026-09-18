@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"golang.org/x/term"
-	"gopkg.in/yaml.v3"
 	"picvert/internal/config"
 )
 
@@ -42,7 +41,13 @@ func loadConfig() (config.Config, error) {
 	return config.Load(configPath())
 }
 
-// passwdCmd turns a password into the hash that goes in the file.
+// passwdCmd sets the administration password.
+//
+// It stores it and prints nothing but where it went. There is no flag to emit
+// the hash instead, because there is nowhere to put one: the password has
+// exactly one home, and a command that handed out a credential for pasting
+// elsewhere would be inviting back the second source that caused a password
+// change to silently do nothing.
 //
 // Read from the terminal WITHOUT echoing, and never taken as an argument: an
 // argument is in the shell history, in the process list, and in the logs of
@@ -50,23 +55,8 @@ func loadConfig() (config.Config, error) {
 func passwdCmd(args []string) error {
 	fs := flag.NewFlagSet("passwd", flag.ExitOnError)
 	stdin := fs.Bool("stdin", false, "read the password from standard input")
-	print_ := fs.Bool("print", false, "print the hash instead of saving it")
 	if err := fs.Parse(args); err != nil {
 		return err
-	}
-
-	// BEFORE asking for anything.
-	//
-	// If something else is going to win, this command cannot do what it is
-	// being asked to do, and the moment to say so is now — not after somebody
-	// has typed a new password twice, been told it was "Saved", restarted the
-	// service and found the old password still in force. That is exactly what
-	// used to happen: it warned in the middle of its own success message, went
-	// on to say "it takes effect on restart" which was untrue, and exited 0.
-	if !*print_ {
-		if err := checkNothingShadowsTheSave(); err != nil {
-			return err
-		}
 	}
 
 	var password string
@@ -140,14 +130,6 @@ func passwdCmd(args []string) error {
 			"\nNote: admin.min-password-length is 0, so nothing was checked.")
 	}
 
-	if *print_ {
-		// To stdout alone, so it can be piped, while the prompts went to
-		// stderr. For templating the value into a configuration managed
-		// somewhere else.
-		fmt.Println(hash)
-		return nil
-	}
-
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -162,73 +144,6 @@ func passwdCmd(args []string) error {
 		"  systemctl restart picvert     # or: rc-service picvert restart\n\n"+
 		"Everyone signed in now is signed out by that restart.")
 	return nil
-}
-
-// checkNothingShadowsTheSave refuses when saving a password cannot take effect.
-//
-// The order this service resolves the password in is, highest first: the
-// environment, then admin.password in the configuration file, then what was
-// stored by this command. That order is right — a deployment that templates
-// its configuration out of Ansible or Nix must not have it silently replaced
-// by a hash somebody generated on the box.
-//
-// But it means this command can be a no-op, and a no-op that reports success
-// is worse than an error: the password is set, the service is restarted, and
-// the OLD password is still the one that works, with nothing anywhere saying
-// why. Somebody then concludes the new password "does not work" and has no
-// thread to pull.
-//
-// So it is refused, before the password is even asked for, and the message
-// names the file and the line rather than describing them.
-func checkNothingShadowsTheSave() error {
-	if env := strings.TrimSpace(os.Getenv("PICVERT_ADMIN_PASSWORD")); env != "" {
-		return errors.New("PICVERT_ADMIN_PASSWORD is set in this environment, and it " +
-			"wins over\nanything saved here — so saving a password now would have no " +
-			"effect.\n\n" +
-			"Change it where it is set, or unset it and run this again.\n\n" +
-			"To generate a hash to put there:  picvert passwd --print")
-	}
-
-	path := configPath()
-	if path == "" {
-		return nil
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		// Unreadable is not the same as shadowing. `picvert passwd` is often
-		// run before the service is configured at all, and refusing then would
-		// be refusing at the moment the command is most needed.
-		return nil
-	}
-	var probe struct {
-		Admin struct {
-			Password string `yaml:"password"`
-		} `yaml:"admin"`
-	}
-	if yaml.Unmarshal(raw, &probe) != nil {
-		return nil
-	}
-	if probe.Admin.Password == "" {
-		return nil
-	}
-
-	line := "admin.password"
-	for i, text := range strings.Split(string(raw), "\n") {
-		trimmed := strings.TrimSpace(text)
-		if strings.HasPrefix(trimmed, "password:") && !strings.HasPrefix(trimmed, "#") {
-			line = fmt.Sprintf("line %d", i+1)
-			break
-		}
-	}
-	return fmt.Errorf("admin.password is set in %s (%s), and it wins over\n"+
-		"anything saved here — so saving a password now would have no effect.\n\n"+
-		"Either comment that line out and run this again, so the password lives\n"+
-		"with the CVs and there is nothing to copy:\n\n"+
-		"  sudo sed -i 's/^  password:/  # password:/' %s\n"+
-		"  sudo picvert passwd\n\n"+
-		"or keep managing it in that file, and put a fresh hash on that line:\n\n"+
-		"  picvert passwd --print",
-		path, line, path)
 }
 
 // configCmd prints what the service would be told, and where from.

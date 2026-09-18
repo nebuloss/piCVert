@@ -80,7 +80,7 @@ func TestTheFloorComesFromTheConfiguration(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
 			file := filepath.Join(dir, "picvert.yaml")
-			body := "admin:\n  listen: \"127.0.0.1:3001\"\n"
+			body := "data-dir: \"" + dir + "\"\nadmin:\n  listen: \"127.0.0.1:3001\"\n"
 			if c.floor != "" {
 				body += "  min-password-length: " + c.floor + "\n"
 			}
@@ -88,6 +88,7 @@ func TestTheFloorComesFromTheConfiguration(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PICVERT_CONFIG", file)
+			t.Setenv("PICVERT_DATA", dir)
 
 			err := hashPiped(t, c.password)
 			if c.accepted && err != nil {
@@ -110,24 +111,39 @@ func TestTheFloorCanBeTurnedOffByEnvironment(t *testing.T) {
 	}
 }
 
-// Being unable to read a configuration file must not stop a password being
-// hashed. `picvert passwd` is often the FIRST command run on a machine, before
-// there is a file at all — refusing then would be refusing at exactly the
-// moment the command is most needed.
-func TestAPasswordIsHashedWithNoConfigurationAtAll(t *testing.T) {
-	t.Setenv("PICVERT_CONFIG", filepath.Join(t.TempDir(), "absent.yaml"))
-	if err := hashPiped(t, "a long enough password"); err != nil {
-		t.Fatalf("no configuration file stopped a password being hashed: %v", err)
+// Having no configuration file at all must not stop a password being set.
+//
+// `picvert passwd` is often the FIRST command run on a machine, before there
+// is a file anywhere — the installer calls it exactly that way. Refusing then
+// would be refusing at the moment the command is most needed.
+//
+// Naming a file that does not exist stays an error, and that asymmetry is
+// deliberate: that is somebody asking for one specific file, and carrying on
+// with defaults instead is how the wrong machine gets configured.
+func TestAPasswordIsSetWithNoConfigurationAtAll(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PICVERT_CONFIG", "")
+	t.Setenv("PICVERT_DATA", dir)
+
+	if err := hashPipedArgs(t, "a long enough password", "--stdin"); err != nil {
+		t.Fatalf("no configuration file stopped a password being set: %v", err)
+	}
+	if !config.Verify(config.ReadPasswordFile(dir), "a long enough password") {
+		t.Fatal("the password was not stored")
 	}
 }
 
 // hashPiped runs `passwd --stdin` with a password on standard input.
 func hashPiped(t *testing.T, password string) error {
 	t.Helper()
-	// --print, because these exercise the reading and the floor rather than
-	// the storing. Without it every one of them would write a password file
-	// into whatever this machine's data directory turns out to be.
-	return hashPipedArgs(t, password, "--stdin", "--print")
+	// A scratch data directory unless the caller chose one, so a test that
+	// only cares about the length floor does not write a password file into
+	// whatever this machine's real data directory turns out to be — and a test
+	// that DOES care keeps the directory it set up.
+	if os.Getenv("PICVERT_DATA") == "" {
+		t.Setenv("PICVERT_DATA", t.TempDir())
+	}
+	return hashPipedArgs(t, password, "--stdin")
 }
 
 // hashPipedArgs is the same with the flags spelled out.
@@ -176,98 +192,34 @@ func TestSettingAPasswordIsOneStep(t *testing.T) {
 	}
 }
 
-// --print stores nothing.
+// A leftover password in the configuration file stops the service, rather than
+// quietly deciding the outcome.
 //
-// It exists for templating the value into a configuration managed elsewhere,
-// and a flag that printed AND stored would leave a credential on a machine
-// that was only ever asked to compute one.
-func TestPrintingDoesNotStore(t *testing.T) {
+// Written from a real report: the password was changed, the service restarted,
+// and the login form still refused it — a line the installer had left in the
+// configuration was winning, and every message said success. The key is gone
+// now, so the same file is refused at load with the line named.
+func TestALeftoverPasswordInTheConfigurationIsRefused(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("PICVERT_DATA", dir)
-	t.Setenv("PICVERT_CONFIG", "")
-
-	if err := hashPipedArgs(t, "a long enough password", "--stdin", "--print"); err != nil {
-		t.Fatal(err)
-	}
-	if got := config.ReadPasswordFile(dir); got != "" {
-		t.Fatal("--print wrote a password file")
-	}
-}
-
-// Saving a password that something else would override must FAIL.
-//
-// This is written from a real report: the password was changed, the service
-// was restarted, and the login form still refused it. The command had said
-// "Saved in ...", then "it takes effect on restart", and exited 0 — while
-// admin.password in the configuration file went on winning. Everything
-// reported success and the password did not change.
-//
-// A warning was not enough. It was printed between two lines that both read as
-// success, and nothing that reads an exit status could see it at all.
-func TestSavingAPasswordThatWouldBeIgnoredIsRefused(t *testing.T) {
-	dir := t.TempDir()
-	existing, err := config.Hash("the one already configured")
+	hash, err := config.Hash("the one already configured")
 	if err != nil {
 		t.Fatal(err)
 	}
 	file := filepath.Join(dir, "picvert.yaml")
-	body := "data-dir: \"" + dir + "\"\nadmin:\n  password: \"" + existing + "\"\n"
+	body := "data-dir: \"" + dir + "\"\nadmin:\n  password: \"" + hash + "\"\n"
 	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PICVERT_CONFIG", file)
 	t.Setenv("PICVERT_DATA", dir)
-	t.Setenv("PICVERT_ADMIN_PASSWORD", "")
 
-	err = hashPipedArgs(t, "a long enough password", "--stdin")
-	if err == nil {
-		t.Fatal("saving succeeded while the configuration file went on winning — " +
-			"the password appears changed and is not")
-	}
-	// The message has to name the file, because the next question is always
-	// "which file, and which line".
-	if !strings.Contains(err.Error(), file) {
-		t.Fatalf("the message does not name the file to edit: %v", err)
-	}
-
-	// And nothing was written, so the state is not half-changed.
-	if got := config.ReadPasswordFile(dir); got != "" {
-		t.Fatal("it refused and stored the password anyway")
+	if err := hashPipedArgs(t, "a long enough password", "--stdin"); err == nil {
+		t.Fatal("the leftover line was tolerated — it used to win silently")
 	}
 }
 
-// The same for the environment, which wins over both.
-func TestSavingIsRefusedWhenTheEnvironmentWins(t *testing.T) {
-	dir := t.TempDir()
-	injected, _ := config.Hash("the injected one")
-	t.Setenv("PICVERT_CONFIG", "")
-	t.Setenv("PICVERT_DATA", dir)
-	t.Setenv("PICVERT_ADMIN_PASSWORD", injected)
-
-	err := hashPipedArgs(t, "a long enough password", "--stdin")
-	if err == nil {
-		t.Fatal("saving succeeded while PICVERT_ADMIN_PASSWORD went on winning")
-	}
-	if !strings.Contains(err.Error(), "PICVERT_ADMIN_PASSWORD") {
-		t.Fatalf("the message does not name what is winning: %v", err)
-	}
-}
-
-// --print still works in that situation: it is how you generate the hash to
-// put INTO the file that is winning, so refusing it would leave no way out.
-func TestPrintingStillWorksWhenSomethingElseWins(t *testing.T) {
-	dir := t.TempDir()
-	injected, _ := config.Hash("the injected one")
-	t.Setenv("PICVERT_DATA", dir)
-	t.Setenv("PICVERT_ADMIN_PASSWORD", injected)
-
-	if err := hashPipedArgs(t, "a long enough password", "--stdin", "--print"); err != nil {
-		t.Fatalf("--print was refused, leaving no way to manage the password: %v", err)
-	}
-}
-
-// And with nothing shadowing it, saving works as before.
-func TestSavingWorksWhenNothingElseIsSet(t *testing.T) {
+// Setting it works, with nothing to copy and nowhere to put it wrong.
+func TestSettingAPasswordIsTheWholeProcedure(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "picvert.yaml")
 	if err := os.WriteFile(file, []byte("data-dir: \""+dir+"\"\n"), 0o600); err != nil {
@@ -275,12 +227,18 @@ func TestSavingWorksWhenNothingElseIsSet(t *testing.T) {
 	}
 	t.Setenv("PICVERT_CONFIG", file)
 	t.Setenv("PICVERT_DATA", dir)
-	t.Setenv("PICVERT_ADMIN_PASSWORD", "")
 
 	if err := hashPipedArgs(t, "a long enough password", "--stdin"); err != nil {
-		t.Fatalf("saving was refused with nothing in the way: %v", err)
+		t.Fatalf("setting the password failed: %v", err)
 	}
-	if !config.Verify(config.ReadPasswordFile(dir), "a long enough password") {
-		t.Fatal("the password was not stored")
+
+	// Read back through the service's own loader, not the helper that wrote
+	// it: what matters is that the thing serving the login form agrees.
+	cfg, err := config.Load(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.Verify(cfg.Admin.Password, "a long enough password") {
+		t.Fatal("the service does not see the password that was just set")
 	}
 }

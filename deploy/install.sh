@@ -201,6 +201,30 @@ fi
 CONFIG=${PICVERT_CONFIG_FILE:-/etc/picvert.yaml}
 
 if [ -f "$CONFIG" ]; then
+  # An `admin.password` line is no longer a setting, and leaving one in place
+  # means the service refuses to start after this upgrade. Every machine
+  # installed before the change has one, because earlier versions of THIS
+  # SCRIPT put it there — so migrating it is this script's job to undo, not
+  # something to leave in a release note.
+  #
+  # The hash is moved rather than discarded: it is the password the operator
+  # currently knows, and an upgrade that silently changes the password is an
+  # upgrade that locks somebody out of their own service.
+  if old_hash=$(sed -n 's/^  *password: *"\(pbkdf2[^"]*\)".*/\1/p' "$CONFIG" | head -1) &&
+     [ -n "$old_hash" ]; then
+    say "moving the administration password out of $CONFIG"
+    # Commented, not deleted. It is the only copy until the line below
+    # succeeds, and a failure here must not leave the service with no
+    # password at all.
+    sed -i 's/^\( *\)password: *"pbkdf2/\1# password (moved to the data directory): "pbkdf2/' "$CONFIG"
+    if printf '%s' "$old_hash" > "$DATA/data/.admin-password" 2>/dev/null; then
+      chmod 0600 "$DATA/data/.admin-password"
+      chown "$SERVICE_USER:$SERVICE_USER" "$DATA/data/.admin-password" 2>/dev/null || true
+      say "the same password still works"
+    else
+      warn "could not move the password — set a new one with: picvert passwd"
+    fi
+  fi
   say "$CONFIG exists — left alone"
 else
   say "writing $CONFIG"
