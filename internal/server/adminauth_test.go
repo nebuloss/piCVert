@@ -1,11 +1,14 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"picvert/internal/config"
 )
@@ -139,6 +142,94 @@ func TestTheRestOfTheAdminInterfaceStaysShut(t *testing.T) {
 	for _, path := range shut {
 		if w := call(t, admin, "GET", path, nil, nil); w.Code != http.StatusUnauthorized {
 			t.Fatalf("%s answered %d without a session, not 401", path, w.Code)
+		}
+	}
+}
+
+// A burst of wrong passwords must not run all at once.
+//
+// Verifying one costs 600,000 rounds of PBKDF2 — measured at 99 ms of solid
+// CPU, which is the point of it. It also makes signing in the most expensive
+// thing a stranger can ask for without proving anything, and the per-address
+// throttle does not cover it: the failure is recorded AFTER the derivation, so
+// requests arriving together all pass the check before any has failed.
+//
+// Measured unbounded on one core: fifty at once is 3.5 seconds of nothing else
+// being served, and the appliance this runs on has one core that also serves
+// the CVs.
+//
+// The gate is tested rather than the login, and concurrency rather than
+// duration: a wall-clock assertion would pass or fail depending on how busy
+// the machine running the test happens to be.
+func TestPasswordDerivationsAreBounded(t *testing.T) {
+	const burst = 40
+
+	var (
+		mu      sync.Mutex
+		running int
+		peak    int
+	)
+	var wg sync.WaitGroup
+	for range burst {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			withKDFSlot(context.Background(), func() {
+				mu.Lock()
+				running++
+				if running > peak {
+					peak = running
+				}
+				mu.Unlock()
+
+				// Long enough that every goroutine is certainly queued behind
+				// this one, so the peak reflects the gate and not scheduling
+				// luck.
+				time.Sleep(2 * time.Millisecond)
+
+				mu.Lock()
+				running--
+				mu.Unlock()
+			})
+		}()
+	}
+	wg.Wait()
+
+	if peak > cap(kdfGate) {
+		t.Fatalf("%d derivations ran at once, past the bound of %d", peak, cap(kdfGate))
+	}
+	if peak == 0 {
+		t.Fatal("nothing ran at all")
+	}
+}
+
+// And a caller who goes away releases their place in the queue.
+//
+// Otherwise a flood of abandoned requests is still a flood of work: the
+// machine spends 99 ms each producing answers nobody is waiting for.
+func TestAnAbandonedLoginDoesNotHoldTheQueue(t *testing.T) {
+	_, admin := guarded(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // gone before it is even served
+
+	form := url.Values{"password": {"hunter2"}}
+	r := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = r.WithContext(ctx)
+
+	// Repeated, because the failure this guards against was a COIN FLIP: a
+	// select with both a free slot and a cancelled context ready picks one at
+	// random. A single attempt passed about half the time, which is how it got
+	// through review once already.
+	for range 20 {
+		w := httptest.NewRecorder()
+		admin.ServeHTTP(w, r)
+
+		// The RIGHT password, from a caller who has gone: it must not be
+		// treated as a sign-in. Nobody is there to receive the cookie.
+		if w.Code == http.StatusSeeOther {
+			t.Fatal("an abandoned request was signed in")
 		}
 	}
 }

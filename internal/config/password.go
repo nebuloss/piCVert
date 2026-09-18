@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -117,5 +116,3 @@ func NewSecret() []byte {
 	}
 	return secret
 }
-
-var _ = fmt.Sprintf

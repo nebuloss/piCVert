@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -137,6 +138,70 @@ func (s *Server) guardAdmin(next http.Handler) http.Handler {
 	})
 }
 
+// kdfGate bounds how many password derivations run at once.
+//
+// # WHY AN UNAUTHENTICATED ENDPOINT NEEDS A QUEUE
+//
+// Verifying a password is 600,000 rounds of PBKDF2 — measured at 99 ms of
+// solid CPU. That cost is the point: it is what makes guessing expensive. It
+// also makes this the most expensive thing a stranger can ask this service to
+// do, and they can ask without proving anything at all.
+//
+// The per-address throttle does not cover it, for a reason that is easy to
+// miss: the failure is recorded AFTER the derivation finishes. Fifty requests
+// arriving together therefore all pass the check — none of them has failed
+// yet — and all fifty derivations run. Measured on one core: 3.5 seconds
+// during which nothing else is served, and the appliance this runs on has one
+// core shared with the port that serves the CVs.
+//
+// So: two at a time. Somebody signing in does not notice a queue of one; an
+// attacker gets a queue instead of the machine. This bounds CONCURRENCY, not
+// rate — the throttle still does that, and still counts failures.
+//
+// Package-level rather than per-Server on purpose: the bound protects the
+// machine's CPU, and two Servers in one process share the CPU.
+var kdfGate = make(chan struct{}, 2)
+
+// verifyPassword derives under the gate, honouring the request's context.
+//
+// The context matters as much as the gate. A caller who disconnects while
+// queued must give up their place rather than have the machine spend 99 ms on
+// an answer nobody will read — otherwise a flood of abandoned requests is
+// still a flood of work.
+func verifyPassword(ctx context.Context, hash, password string) bool {
+	verified := false
+	withKDFSlot(ctx, func() { verified = config.Verify(hash, password) })
+	return verified
+}
+
+// withKDFSlot runs fn holding one of the gate's slots, and reports whether it
+// ran at all — a caller whose context ended while queued is not served.
+//
+// Separated from the derivation so the gating can be tested for what it is:
+// how many things run at once. A test that went through PBKDF2 would be
+// asserting a wall-clock duration, which passes or fails depending on how busy
+// the machine running it happens to be.
+func withKDFSlot(ctx context.Context, fn func()) bool {
+	// Checked BEFORE the select, and that is not redundant.
+	//
+	// When several cases of a select are ready, Go picks one AT RANDOM. With a
+	// free slot in the gate and an already-cancelled context, both are ready —
+	// so a select alone serves a departed caller about half the time. The test
+	// for this passed on its own and failed in the full suite, which is what a
+	// coin flip looks like from the outside.
+	if ctx.Err() != nil {
+		return false
+	}
+	select {
+	case kdfGate <- struct{}{}:
+	case <-ctx.Done():
+		return false
+	}
+	defer func() { <-kdfGate }()
+	fn()
+	return true
+}
+
 // adminLogin is the form, and the attempt.
 func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) {
 	s.Guard.Base(w, r)
@@ -158,7 +223,7 @@ func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err)
 		return
 	}
-	if !config.Verify(s.Config.Admin.Password, r.PostFormValue("password")) {
+	if !verifyPassword(r.Context(), s.Config.Admin.Password, r.PostFormValue("password")) {
 		s.Guard.RecordFailure(security.ClientIP(r))
 		s.Metrics.Refused()
 		w.WriteHeader(http.StatusUnauthorized)
