@@ -178,6 +178,28 @@ func (s *Store) Rotate(slug string, mode Mode) (Links, error) {
 // in place, the entry makes Verify hand back a slug whose directory is gone,
 // and every route trusting it then fails on a read instead of answering
 // cleanly that the link is invalid.
+// Adopt puts links back under a slug, as they were.
+//
+// For restoring a CV that was set aside. Its links go with it into the trash —
+// a live token that resolves to a missing directory is a link that fails on a
+// read rather than answering cleanly that it is invalid — and putting the same
+// ones back is what makes restoring actually restore: everybody who was given
+// the link still has a working one.
+//
+// Refuses to overwrite: if the slug has been taken again in the meantime, the
+// living CV keeps its own links rather than having a deleted one's imposed on
+// it.
+func (s *Store) Adopt(slug string, links Links) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	db := s.load()
+	if existing, taken := db[slug]; taken && existing.Edit != "" {
+		return false
+	}
+	db[slug] = links
+	return s.save(db) == nil
+}
+
 func (s *Store) Forget(slug string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

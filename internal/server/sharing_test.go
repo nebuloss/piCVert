@@ -118,3 +118,74 @@ func TestEditsToDifferentFieldsStillConflict(t *testing.T) {
 			w.Code)
 	}
 }
+
+// Restoring a CV brings back the links it was handed out on.
+//
+// The administration page says "restored, with its original links" and it was
+// not true: the links live in a file of their own rather than in the folder
+// that gets moved to the trash, so an undo returned the CV on NEW links and
+// locked out everybody who had been given the old ones — silently, and with a
+// message claiming the opposite.
+//
+// That is the cost of a CV's identity living outside the CV's folder, and it
+// is why the links now travel with it.
+func TestRestoringBringsBackTheOriginalLinks(t *testing.T) {
+	s, slug := service(t)
+
+	before, err := s.Tokens.ForProfile(slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.Profiles.Get(slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Trash(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Restore(slug); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := s.Tokens.ForProfile(slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Edit != before.Edit || after.Read != before.Read {
+		t.Fatal("the CV came back on different links — everyone holding one " +
+			"was locked out by an undo")
+	}
+
+	// And the link genuinely opens it, rather than merely matching a string.
+	h := s.Handler()
+	w := call(t, h, "GET", "/api/p/"+slug, nil,
+		map[string]string{"X-CV-Token": before.Edit})
+	if w.Code != http.StatusOK {
+		t.Fatalf("the restored link answered %d", w.Code)
+	}
+}
+
+// While it is set aside, its links open nothing.
+//
+// They have to leave the live store: a token resolving to a slug whose folder
+// is gone fails on a read instead of answering cleanly that the link is
+// invalid.
+func TestALinkToASetAsideCVOpensNothing(t *testing.T) {
+	s, slug := service(t)
+
+	links, err := s.Tokens.ForProfile(slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := s.Profiles.Get(slug)
+	if err := s.Trash(p); err != nil {
+		t.Fatal(err)
+	}
+
+	h := s.Handler()
+	w := call(t, h, "GET", "/api/p/"+slug, nil,
+		map[string]string{"X-CV-Token": links.Edit})
+	if w.Code == http.StatusOK {
+		t.Fatal("a link to a deleted CV still opened it")
+	}
+}
