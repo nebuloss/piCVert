@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"picvert/internal/config"
 )
 
 // `picvert passwd` with nothing to type on must say so.
@@ -122,6 +124,12 @@ func TestAPasswordIsHashedWithNoConfigurationAtAll(t *testing.T) {
 // hashPiped runs `passwd --stdin` with a password on standard input.
 func hashPiped(t *testing.T, password string) error {
 	t.Helper()
+	return hashPipedArgs(t, password, "--stdin")
+}
+
+// hashPipedArgs is the same with the flags spelled out.
+func hashPipedArgs(t *testing.T, password string, args ...string) error {
+	t.Helper()
 	file, err := os.CreateTemp(t.TempDir(), "stdin")
 	if err != nil {
 		t.Fatal(err)
@@ -135,5 +143,10 @@ func hashPiped(t *testing.T, password string) error {
 	was := os.Stdin
 	os.Stdin = file
 	defer func() { os.Stdin = was }()
-	return passwdCmd([]string{"--stdin"})
+	return passwdCmd(args)
+}
+
+// hashPipedConfig reloads a configuration file, to prove it still parses.
+func hashPipedConfig(path string) (config.Config, error) {
+	return config.Load(path)
 }

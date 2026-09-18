@@ -390,7 +390,7 @@ if [ -n "${GENERATED_PASSWORD:-}" ]; then
 │   $GENERATED_PASSWORD
 │
 │  Written down nowhere else: $CONFIG holds only a hash of it.
-│  Change it with: picvert passwd — then edit that file.
+│  Change it with: picvert passwd --write
 └───────────────────────────────────────────────────────────────────────
 EOF
 fi

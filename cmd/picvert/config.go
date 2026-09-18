@@ -49,6 +49,7 @@ func loadConfig() (config.Config, error) {
 func passwdCmd(args []string) error {
 	fs := flag.NewFlagSet("passwd", flag.ExitOnError)
 	stdin := fs.Bool("stdin", false, "read the password from standard input")
+	write := fs.Bool("write", false, "save it into the configuration file")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -116,15 +117,63 @@ func passwdCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	// To stdout alone, so it can be piped, while the prompts went to stderr.
-	fmt.Println(hash)
+
 	if floor == 0 {
 		// Said every time, because a floor that is off is a thing to know
 		// about a machine rather than a thing to have decided once.
 		fmt.Fprintln(os.Stderr,
 			"\nNote: admin.min-password-length is 0, so nothing was checked.")
 	}
+
+	if *write {
+		return writePassword(hash)
+	}
+
+	// To stdout alone, so it can be piped, while the prompts went to stderr.
+	fmt.Println(hash)
 	fmt.Fprintln(os.Stderr, "\nPut that in your configuration:\n\nadmin:\n  password: \""+hash+"\"")
+	fmt.Fprintln(os.Stderr, "Or let picvert do it: picvert passwd --write")
+	return nil
+}
+
+// writePassword saves the hash into the configuration file.
+//
+// The hash is NOT printed in this mode. Printing it would put the credential
+// into the terminal scrollback and the shell's log of a session that had no
+// need to see it — the whole point of this flag is that it never has to be
+// carried anywhere by hand.
+func writePassword(hash string) error {
+	path := configPath()
+	if path == "" {
+		return fmt.Errorf("there is no configuration file to write to.\n\n" +
+			"Create one from deploy/picvert.yaml.example, or say where it is:\n\n" +
+			"  PICVERT_CONFIG=/etc/picvert.yaml picvert passwd --write")
+	}
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := writeInPlace(path, setScalar(source, "admin", "password", hash)); err != nil {
+		return err
+	}
+
+	// Re-read it rather than trust the edit. This is the file the service will
+	// refuse to start on if it is wrong, and the moment to find that out is now
+	// — while the .bak beside it is still the file that worked.
+	cfg, err := config.Load(path)
+	if err != nil {
+		return fmt.Errorf("%s no longer parses — put %s.bak back: %w", path, path, err)
+	}
+	if cfg.Admin.Password != hash {
+		return fmt.Errorf("%s was written but does not read back with the new "+
+			"password.\nSomething else is setting it — PICVERT_ADMIN_PASSWORD in "+
+			"the environment overrides the file", path)
+	}
+
+	fmt.Fprintf(os.Stderr, "Saved in %s (previous kept as %s.bak).\n", path, path)
+	fmt.Fprintln(os.Stderr, "It takes effect on restart:\n\n"+
+		"  systemctl restart picvert     # or: rc-service picvert restart\n\n"+
+		"Everyone signed in now is signed out by that restart.")
 	return nil
 }
 

@@ -132,25 +132,42 @@ nobody could reach it, and binding it wider removes exactly that.
 To change it:
 
 ```sh
-picvert passwd                  # asks twice, echoes nothing, prints a hash
-sudo -e /etc/picvert.yaml       # put the hash in admin.password
+sudo picvert passwd --write     # asks twice, echoes nothing, saves it
 sudo systemctl restart picvert  # or: rc-service picvert restart
 ```
 
-It prints a hash rather than writing the file, because the file is yours: it is
-commented, it is edited by hand, and a program that rewrites it is a program
-that reformats the comments away. The hash goes to stdout alone and the prompts
-to stderr, so it pipes cleanly.
+`--write` edits `admin.password` and nothing else. It replaces that one line,
+keeps every comment and every other setting byte for byte, and leaves the
+previous file beside it as `picvert.yaml.bak`. It writes the file in place
+rather than replacing it, because `/etc/picvert.yaml` is `root:picvert 0640` —
+owned by root so the service cannot edit it, group-readable so the service can
+read it. A file created fresh and renamed over the target would be `root:root`,
+and the service would no longer be able to read its own configuration.
 
-Without a terminal — over `ssh host picvert passwd`, or from a script — pipe it
-instead:
+The hash is not printed in this mode: the point of the flag is that the
+credential never has to be carried anywhere by hand, and printing it would put
+it in the terminal scrollback.
+
+Without `--write` it prints the hash instead, for pasting into a file it does
+not manage:
 
 ```sh
-printf '%s\n' 'the new password' | picvert passwd --stdin
+picvert passwd                  # prints a hash
+sudo -e /etc/picvert.yaml       # put it in admin.password
+```
+
+Without a terminal — over `ssh host picvert passwd`, or from a script — pipe it
+instead. The two flags combine:
+
+```sh
+printf '%s\n' 'the new password' | sudo picvert passwd --stdin --write
 ```
 
 Never as an argument: an argument is in the shell history, in the process list,
 and in the logs of anything watching either.
+
+Either way it takes effect on restart, and that restart signs out everyone
+currently signed in.
 
 ### The length floor, and turning it off
 

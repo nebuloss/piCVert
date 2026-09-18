@@ -9,7 +9,7 @@
 # secret without ever writing it to a disk.
 #
 #   picvert config     shows what the service would actually be told
-#   picvert passwd     hashes a password for the section below
+#   picvert passwd --write   sets the password in the section below
 #
 # JSON works too, in this same file: YAML is a superset of it, so
 # {"listen": "0.0.0.0:3000"} parses exactly as the equivalent below. Use it if
@@ -48,7 +48,8 @@ admin:
   # Reach it over SSH:  ssh -L 3001:127.0.0.1:3001 your-host
   listen: "0.0.0.0:3001"
 
-  # A PASSWORD HASH, never a password. `picvert passwd` prints one.
+  # A PASSWORD HASH, never a password. `picvert passwd --write` sets it here
+  # for you, leaving these comments alone.
   #
   # Required, because the port above is reachable from the network: piCVert
   # refuses to start otherwise. What used to protect this port was that nobody

@@ -100,8 +100,11 @@ func usage() {
   picvert config
         Prints what the service is configured with, and where it came from.
 
-  picvert passwd
+  picvert passwd [--write] [--stdin]
         Hashes a password for the administration interface.
+        --write saves it into the configuration file, keeping a .bak and
+        leaving every comment in place. Without it the hash is printed,
+        for pasting by hand.
 
   picvert version
 
