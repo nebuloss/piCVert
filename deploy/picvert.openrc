@@ -1,0 +1,56 @@
+#!/sbin/openrc-run
+# piCVert, under OpenRC.
+#
+# Install to /etc/init.d/picvert and `rc-update add picvert default`.
+#
+# # WHY THIS EXISTS BESIDE THE SYSTEMD UNIT
+#
+# An Alpine container is a very reasonable place to run this: the whole service
+# is one static binary, and Alpine is the smallest thing that can hold one. It
+# has no systemd, so the unit beside this file does nothing there — and the
+# installer, which only wrote that unit, left such a container with a binary
+# and no way to start it.
+#
+# The hardening the systemd unit asks for has no OpenRC equivalent. What is
+# kept is what OpenRC can express: an unprivileged account, and a writable
+# directory that is only the data. The rest is the container's job, which in an
+# unprivileged LXC is a boundary at least as strong as the namespace options
+# systemd would have set.
+
+name="piCVert"
+description="A CV engine that lays the page out once"
+
+command="/opt/picvert/picvert"
+command_args="serve"
+command_user="picvert:picvert"
+command_background=true
+pidfile="/run/picvert.pid"
+
+output_log="/var/log/picvert.log"
+error_log="/var/log/picvert.log"
+
+depend() {
+    need net
+    after firewall
+}
+
+start_pre() {
+    # The configuration carries the administration password and the Turnstile
+    # secret, so it is readable by the service account and nobody else.
+    checkpath --directory --owner picvert:picvert --mode 0750 /var/lib/picvert
+    checkpath --directory --owner picvert:picvert --mode 0750 /var/lib/picvert/data
+    checkpath --directory --owner picvert:picvert --mode 0750 /var/lib/picvert/backups
+    checkpath --file --owner picvert:picvert --mode 0640 "$output_log"
+
+    # Refuse to start rather than start wrong. `picvert config` fails on a
+    # configuration that cannot mean what it says — a domain with no scheme, a
+    # plaintext password — and a service that starts anyway is one nobody
+    # notices is misconfigured until a link comes out wrong.
+    if [ -f /etc/picvert.yaml ]; then
+        PICVERT_CONFIG=/etc/picvert.yaml "$command" config >/dev/null 2>&1 || {
+            eerror "the configuration in /etc/picvert.yaml is not usable:"
+            PICVERT_CONFIG=/etc/picvert.yaml "$command" config 2>&1 | head -12
+            return 1
+        }
+    fi
+}

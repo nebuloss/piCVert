@@ -66,15 +66,22 @@ esac
 
 ASSET="picvert-linux-$ARCH"
 
-# --- is systemd here? --------------------------------------------------------
+# --- which init is this? -----------------------------------------------------
 
-# An LXC container may be running without an init system at all, which is a
-# perfectly ordinary way to run one and a completely different way to start a
-# service. Saying so beats installing a unit file nothing will ever read.
-HAVE_SYSTEMD=no
-if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 &&
-   [ "$(id -u)" -eq 0 ]; then
-  HAVE_SYSTEMD=yes
+# systemd, OpenRC, or nothing at all — and all three are ordinary. An Alpine
+# container is a very reasonable place to run one static binary, and it has no
+# systemd; a container may also be running with no init at all, which is a
+# completely different way to start a service.
+#
+# Detected rather than assumed, because the first version assumed systemd and
+# left an Alpine container with a binary and no way to start it.
+INIT=none
+if [ "$(id -u)" -eq 0 ]; then
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    INIT=systemd
+  elif command -v rc-update >/dev/null 2>&1 && [ -d /etc/init.d ]; then
+    INIT=openrc
+  fi
 fi
 
 # --- fetch -------------------------------------------------------------------
@@ -216,7 +223,37 @@ fi
 
 # --- the service -------------------------------------------------------------
 
-if [ "$HAVE_SYSTEMD" = yes ]; then
+if [ "$INIT" = openrc ]; then
+  say "installing the service (OpenRC)"
+  fetch "https://raw.githubusercontent.com/$REPO/$VERSION/deploy/picvert.openrc" \
+    /etc/init.d/picvert ||
+    fetch "https://raw.githubusercontent.com/$REPO/main/deploy/picvert.openrc" \
+      /etc/init.d/picvert ||
+    die "cannot fetch the service script"
+  chmod 0755 /etc/init.d/picvert
+
+  # Nightly backups, through the periodic directory busybox crond already runs.
+  if [ -d /etc/periodic/daily ]; then
+    fetch "https://raw.githubusercontent.com/$REPO/$VERSION/deploy/picvert-backup.openrc" \
+      /etc/periodic/daily/picvert-backup ||
+      fetch "https://raw.githubusercontent.com/$REPO/main/deploy/picvert-backup.openrc" \
+        /etc/periodic/daily/picvert-backup || true
+    [ -f /etc/periodic/daily/picvert-backup ] && chmod 0755 /etc/periodic/daily/picvert-backup
+  fi
+
+  rc-update add picvert default >/dev/null 2>&1 || true
+  rc-service picvert restart >/dev/null 2>&1 || rc-service picvert start >/dev/null 2>&1 || true
+
+  sleep 1
+  if rc-service picvert status >/dev/null 2>&1; then
+    say "running"
+  else
+    printf '\n'
+    tail -n 20 /var/log/picvert.log 2>/dev/null | sed 's/^/  /'
+    die "the service did not start — the log is above"
+  fi
+
+elif [ "$INIT" = systemd ]; then
   say "installing the service"
   fetch "https://raw.githubusercontent.com/$REPO/$VERSION/deploy/picvert.service" "$UNIT" ||
     fetch "https://raw.githubusercontent.com/$REPO/main/deploy/picvert.service" "$UNIT" ||
@@ -275,7 +312,7 @@ if [ "$HAVE_SYSTEMD" = yes ]; then
     die "the service did not start — the log is above"
   fi
 else
-  warn "no systemd here, so nothing was set up to start it automatically."
+  warn "no init system here, so nothing was set up to start it automatically."
   warn "Start it by hand with:"
   # `set -a` exports what the file assigns, which handles quoted values and
   # comments correctly — where piping the file through xargs breaks on the

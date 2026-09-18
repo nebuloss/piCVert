@@ -1,0 +1,13 @@
+#!/bin/sh
+# piCVert's nightly backup, for a host running OpenRC rather than systemd.
+#
+# Install to /etc/periodic/daily/picvert-backup and make it executable. Alpine
+# runs everything in that directory once a day through busybox crond, which is
+# the OpenRC equivalent of the systemd timer beside this file.
+#
+# --keep is what makes it unattended: without it a nightly backup is a disk
+# filling up on a schedule, which takes the service down with it and is a worse
+# failure than having no backup at all.
+set -eu
+cd /var/lib/picvert/backups
+exec su picvert -s /bin/sh -c '/opt/picvert/picvert backup --keep 14'

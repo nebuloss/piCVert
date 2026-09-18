@@ -28,6 +28,20 @@ Run the same command again to upgrade. It never touches `/etc/picvert.env` or
 the data directory once they exist, so an upgrade cannot take your configuration
 or your CVs with it.
 
+### On Alpine, or anything without systemd
+
+The installer detects the init system. On Alpine it writes an OpenRC service
+and a daily backup into `/etc/periodic/daily`; with no init at all it says so
+and prints the command to start it by hand.
+
+The binary is static, so it runs on musl as it does on glibc — which is what
+makes a 512 MB Alpine container a reasonable place for this.
+
+The systemd sandbox has no OpenRC equivalent. What is kept there is what OpenRC
+can express: an unprivileged account and one writable directory. In an
+unprivileged LXC the container itself is a boundary at least as strong as the
+namespace options systemd would have set.
+
 ### In an LXC container
 
 The same command. One thing is worth knowing: the service unit asks the kernel
