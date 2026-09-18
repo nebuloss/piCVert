@@ -80,6 +80,21 @@ admin:
   # written down, so a restart signs everybody out.
   session: "12h"
 
+  # The shortest password `picvert passwd` will hash. 0 turns the check off.
+  #
+  # A length floor and nothing more: there is no character-class rule here, no
+  # expiry and no history, and there will not be — those are what make people
+  # write a password down and then change one character of it a month.
+  #
+  # Lower it, or set it to 0, when this machine's risk is yours to judge: an
+  # appliance on a private network, a demonstration, a test. The floor is our
+  # guess about your deployment, and refusing you achieves nothing anyway — a
+  # hash is a hash, and one can be produced another way in a minute.
+  #
+  # At 0 the command says so every time it runs, because a machine whose floor
+  # is off is a thing to be reminded of rather than to have decided once.
+  min-password-length: 10
+
 # Cloudflare Turnstile, for the front page where a stranger can make a CV.
 #
 # Off unless BOTH keys are set. Without it there is no public creation form at

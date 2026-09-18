@@ -139,6 +139,30 @@ type Admin struct {
 	// machines on it, and this interface hands out every private link on the
 	// service — the only credential it has — to anything that can reach it.
 	Open bool `yaml:"i-know-this-port-is-reachable"`
+
+	// MinPasswordLength is the shortest password `picvert passwd` will hash.
+	// Zero turns the check off entirely.
+	//
+	// # WHY THIS IS A SETTING AND NOT A RULE
+	//
+	// The floor exists because this password guards the one surface that
+	// deletes CVs and displays every private link on the service. Ten
+	// characters is not a complexity policy — there is no class requirement
+	// here, no expiry and no history, and there will not be: those are what
+	// make people write a password down and then change one character of it a
+	// month.
+	//
+	// But a floor is our guess about somebody else's threat model, and it is
+	// wrong for at least two real deployments: an appliance on a private
+	// network whose operator has already decided what the risk is, and a test
+	// that wants a password without wanting to think about one. Refusing them
+	// achieves nothing — a hash is a hash, and anybody stopped here can
+	// produce one another way in a minute. A refusal that is trivially
+	// sidestepped is not a control; it is an obstacle to the honest.
+	//
+	// So it is stated where every other decision about this service is stated,
+	// and `picvert passwd` says plainly when it is off.
+	MinPasswordLength int `yaml:"min-password-length"`
 }
 
 // Turnstile is Cloudflare's challenge, for surfaces open to strangers.
@@ -224,6 +248,10 @@ func Defaults() Config {
 			// it in one command — deploy/install.sh does it for them.
 			Listen:  "0.0.0.0:3001",
 			Session: 12 * time.Hour,
+
+			// Long enough to be worth having, short enough to be typed from
+			// memory. See MinPasswordLength for why it can be turned off.
+			MinPasswordLength: 10,
 		},
 		Template: "material-you",
 		Limits: Limits{
@@ -297,6 +325,15 @@ func (c *Config) overrideFromEnv() {
 			*into = v
 		}
 	}
+	// Separate from `num`, which rejects zero so that an empty or malformed
+	// variable cannot silently set a limit to nothing. Here zero is the whole
+	// point — it is how the password floor is turned off — so the value is
+	// taken as given and only a negative one is refused.
+	zeroable := func(name string, into *int) {
+		if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv(name))); err == nil && v >= 0 {
+			*into = v
+		}
+	}
 
 	str("PICVERT_DOMAIN", &c.Domain)
 	str("PICVERT_PUBLIC_URL", &c.Domain) // the name this used to have
@@ -314,6 +351,8 @@ func (c *Config) overrideFromEnv() {
 
 	num("PICVERT_MAX_PROFILE_MB", &c.Limits.MaxProfileMB)
 	num("PICVERT_MIN_FREE_MB", &c.Limits.MinFreeMB)
+
+	zeroable("PICVERT_ADMIN_MIN_PASSWORD", &c.Admin.MinPasswordLength)
 
 	if v := strings.TrimSpace(os.Getenv("PICVERT_PUBLIC")); v != "" {
 		if v == "*" {

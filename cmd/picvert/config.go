@@ -93,10 +93,24 @@ func passwdCmd(args []string) error {
 		password = string(typed)
 	}
 
-	if len(password) < 10 {
-		// Not a policy, a floor. This guards the one surface that deletes CVs
-		// and hands out every private link on the service.
-		return fmt.Errorf("that is too short — ten characters at the very least")
+	// The floor comes from the configuration, so the rule this command enforces
+	// is the one the appliance was set up with rather than one compiled in. A
+	// missing or unreadable file is not fatal here: `picvert passwd` is often
+	// the very first command run on a machine, before there is a file at all,
+	// and refusing to hash a password because the service is not yet
+	// configured would be refusing at precisely the wrong moment.
+	floor := config.Defaults().Admin.MinPasswordLength
+	if cfg, err := loadConfig(); err == nil {
+		floor = cfg.Admin.MinPasswordLength
+	}
+
+	if floor > 0 && len(password) < floor {
+		// Not a complexity policy, a floor. This guards the one surface that
+		// deletes CVs and hands out every private link on the service.
+		return fmt.Errorf("that is too short — %d characters at the very least.\n\n"+
+			"To change or remove the floor:\n\n"+
+			"admin:\n"+
+			"  min-password-length: %d   # 0 turns the check off", floor, floor)
 	}
 	hash, err := config.Hash(password)
 	if err != nil {
@@ -104,6 +118,12 @@ func passwdCmd(args []string) error {
 	}
 	// To stdout alone, so it can be piped, while the prompts went to stderr.
 	fmt.Println(hash)
+	if floor == 0 {
+		// Said every time, because a floor that is off is a thing to know
+		// about a machine rather than a thing to have decided once.
+		fmt.Fprintln(os.Stderr,
+			"\nNote: admin.min-password-length is 0, so nothing was checked.")
+	}
 	fmt.Fprintln(os.Stderr, "\nPut that in your configuration:\n\nadmin:\n  password: \""+hash+"\"")
 	return nil
 }
@@ -131,6 +151,12 @@ func configCmd(args []string) error {
 	fmt.Printf("  admin         %s\n", orNone(cfg.Admin.Listen, "off"))
 	fmt.Printf("  admin login   %s\n", yesNo(cfg.Admin.Password != "",
 		"password required", "none — protected only by not being reachable"))
+	// Shown always rather than only when it is off: this command exists to
+	// answer "what is this machine actually configured with", and a setting
+	// that only appears when it is unusual is one nobody knows to look for.
+	fmt.Printf("  passwd floor  %s\n", yesNo(cfg.Admin.MinPasswordLength > 0,
+		fmt.Sprintf("%d characters", cfg.Admin.MinPasswordLength),
+		"off — `picvert passwd` checks nothing"))
 	fmt.Printf("  challenge     %s\n", yesNo(cfg.Turnstile.SiteKey != "",
 		"Turnstile", "off"))
 	fmt.Printf("  published     %s\n", cfg.DescribeAccess())

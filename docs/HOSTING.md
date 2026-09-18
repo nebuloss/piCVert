@@ -152,6 +152,36 @@ printf '%s\n' 'the new password' | picvert passwd --stdin
 Never as an argument: an argument is in the shell history, in the process list,
 and in the logs of anything watching either.
 
+### The length floor, and turning it off
+
+`passwd` refuses anything under ten characters. That is a length floor and
+nothing else — there is no character-class rule here, no expiry and no history,
+and there will not be: those are what make people write a password down and
+then change one character of it a month.
+
+It is a setting, because the floor is our guess about your deployment and it is
+wrong for some of them:
+
+```yaml
+admin:
+  min-password-length: 0     # off entirely
+  # min-password-length: 4   # or just lower
+```
+
+or, for a container configured by environment:
+
+```sh
+PICVERT_ADMIN_MIN_PASSWORD=0
+```
+
+At `0` the command says so on every run, because a machine whose floor is off
+is a thing to be reminded of rather than to have decided once.
+
+This weakens nothing by itself. Anybody the floor stopped could already produce
+a hash another way in a minute, and a refusal that is trivially sidestepped is
+not a control — it is an obstacle to the person being honest about what their
+machine is. What still holds is the sentence below.
+
 
 **Never proxy the admin port to the internet.** The public side deliberately has
 no authenticated surface at all — with nothing to guess there, nothing is
