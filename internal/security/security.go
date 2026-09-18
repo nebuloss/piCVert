@@ -44,6 +44,12 @@ const (
 	Viewer Kind = "viewer"
 	// Admin is the editor and the admin interface.
 	Admin Kind = "admin"
+	// Login is the sign-in form on the admin port.
+	//
+	// It needs its OWN policy for exactly one directive. Every other page here
+	// submits nothing, so Admin says `form-action 'none'` — and that directive
+	// blocked the one form on this service that has to work. See Policy.
+	Login Kind = "login"
 	// Home is the creation page.
 	Home Kind = "home"
 )
@@ -277,6 +283,20 @@ func (g *Guard) Policy(kind Kind) string {
 		return "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
 			"script-src 'self'; connect-src 'self'; frame-src 'self'; " +
 			"font-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors " + frame
+	case Login:
+		// The sign-in form, and the narrowest policy here: a page with one
+		// input on it needs no script, no frame and no connection.
+		//
+		// `form-action 'self'` is the WHOLE REASON this kind exists. The page
+		// used to be served under Admin, whose `form-action 'none'` is right
+		// for every page that submits nothing — and this is the one page that
+		// submits something. The browser blocked the POST before it left, so
+		// the password was never wrong and never right: the button did
+		// nothing, and the log recorded no attempt to explain why. An
+		// administration interface nobody could sign in to, with no error on
+		// either side saying so.
+		return "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; " +
+			"base-uri 'none'; form-action 'self'; frame-ancestors " + frame
 	default:
 		// The front page, and the ONLY page allowed to load anything from
 		// outside — Cloudflare's challenge, and only Cloudflare's.

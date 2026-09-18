@@ -108,7 +108,15 @@ func (s *Server) guardAdmin(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if r.URL.Path == "/login" || strings.HasPrefix(r.URL.Path, "/assets/") {
+		// The sign-in page has to be able to draw itself, which means the form,
+		// the stylesheets it shares with the rest, and the icon in the tab. The
+		// icon was NOT on this list, so a browser asking for it was answered 401
+		// — and a browser that is refused an icon once stops asking for the rest
+		// of the session, so the tab stayed blank even after signing in
+		// successfully. None of these reveal anything: they are the same bytes
+		// for everyone, signed in or not.
+		if r.URL.Path == "/login" || r.URL.Path == "/favicon.svg" ||
+			r.URL.Path == "/favicon.ico" || strings.HasPrefix(r.URL.Path, "/assets/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -122,7 +130,7 @@ func (s *Server) guardAdmin(next http.Handler) http.Handler {
 			return
 		}
 		s.Guard.Base(w, r)
-		s.Guard.CSP(w, security.Admin)
+		s.Guard.CSP(w, security.Login)
 		security.NoCache(w)
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(loginPage("")))
@@ -132,7 +140,7 @@ func (s *Server) guardAdmin(next http.Handler) http.Handler {
 // adminLogin is the form, and the attempt.
 func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) {
 	s.Guard.Base(w, r)
-	s.Guard.CSP(w, security.Admin)
+	s.Guard.CSP(w, security.Login)
 	security.NoCache(w)
 
 	if r.Method == http.MethodGet {
