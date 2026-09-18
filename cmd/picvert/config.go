@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -61,6 +62,19 @@ func passwdCmd(args []string) error {
 		}
 		password = strings.TrimRight(line, "\r\n")
 	} else {
+		// Said before the prompt rather than after the failure. Without a
+		// terminal, reading a password without echo fails deep in a system
+		// call and surfaces as "inappropriate ioctl for device" — which names
+		// neither the cause nor the flag that avoids it, and appears AFTER
+		// the word "Password:" has already been printed, so it reads as a
+		// rejected password rather than a question never asked. Over `ssh
+		// host picvert passwd`, or from a script, that is the whole of the
+		// output.
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			return errors.New("this asks for a password and there is no terminal " +
+				"to ask on — pipe it instead:\n\n" +
+				`  printf '%s\n' 'the password' | picvert passwd --stdin`)
+		}
 		fmt.Fprint(os.Stderr, "Password: ")
 		typed, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Fprintln(os.Stderr)

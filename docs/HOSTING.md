@@ -84,9 +84,12 @@ half-hour if you have moved the paths.
 ```sh
 git clone https://github.com/nebuloss/piCVert && cd piCVert
 go build -o /opt/picvert/picvert ./cmd/picvert
+sudo ln -sf /opt/picvert/picvert /usr/local/bin/picvert
 ```
 
-That is the whole build — the interface is compiled by esbuild, which is written
+The symlink is what `install.sh` does too: the commands an administrator
+needs — `passwd`, `backup`, `restore` — are on this binary and not in the web
+interface. That is the whole build — the interface is compiled by esbuild, which is written
 in Go. Then take the unit and the environment example from `deploy/`.
 
 Then put a proxy in front of the **public port only**
@@ -95,7 +98,7 @@ Then put a proxy in front of the **public port only**
 ```bash
 ssh -L 3001:127.0.0.1:3001 your-host       # then open http://127.0.0.1:3001
 # or, without forwarding anything:
-sudo -u picvert /opt/picvert/picvert new --slug jean --name "Jean Dupont"
+sudo -u picvert picvert new --slug jean --name "Jean Dupont"
 ```
 
 Upgrading is the same script again. It rebuilds, replaces the binary and
@@ -126,7 +129,29 @@ nobody could reach it, and binding it wider removes exactly that.
 └───────────────────────────────────────────────────────────
 ```
 
-Change it with `picvert passwd` and edit `admin.password`.
+To change it:
+
+```sh
+picvert passwd                  # asks twice, echoes nothing, prints a hash
+sudo -e /etc/picvert.yaml       # put the hash in admin.password
+sudo systemctl restart picvert  # or: rc-service picvert restart
+```
+
+It prints a hash rather than writing the file, because the file is yours: it is
+commented, it is edited by hand, and a program that rewrites it is a program
+that reformats the comments away. The hash goes to stdout alone and the prompts
+to stderr, so it pipes cleanly.
+
+Without a terminal — over `ssh host picvert passwd`, or from a script — pipe it
+instead:
+
+```sh
+printf '%s\n' 'the new password' | picvert passwd --stdin
+```
+
+Never as an argument: an argument is in the shell history, in the process list,
+and in the logs of anything watching either.
+
 
 **Never proxy the admin port to the internet.** The public side deliberately has
 no authenticated surface at all — with nothing to guess there, nothing is
@@ -348,7 +373,7 @@ is a few megabytes of parsed fonts plus the page being drawn.
 ```bash
 curl -s localhost:3000/healthz                 # {"ok":true,"profiles":N}
 journalctl -u picvert -f
-sudo -u picvert /opt/picvert/picvert fit --profile /var/lib/picvert/data/jean
+sudo -u picvert picvert fit --profile /var/lib/picvert/data/jean
 ```
 
 `fit` is worth knowing: it says whether a CV holds on one page, how much room

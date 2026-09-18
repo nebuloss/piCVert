@@ -181,6 +181,21 @@ cp "$TMP/picvert" "$PREFIX/picvert.new"
 chmod 0755 "$PREFIX/picvert.new"
 mv -f "$PREFIX/picvert.new" "$PREFIX/picvert"
 
+# And on the PATH, because the commands an administrator needs are on this
+# binary and not in the web interface: changing the password, taking a backup,
+# restoring one. Typing the whole of /opt/picvert/picvert for those is the kind
+# of friction that ends with the password never being changed.
+#
+# A symlink rather than a copy: an upgrade replaces the file under $PREFIX and
+# a copy would leave the old version sitting on the PATH, which is the worst
+# outcome — two versions installed, and the one you reach by name is the stale
+# one.
+LINKDIR=${PICVERT_LINK_DIR:-/usr/local/bin}
+if [ -d "$LINKDIR" ] && [ -w "$LINKDIR" ]; then
+  ln -sf "$PREFIX/picvert" "$LINKDIR/picvert"
+  say "linked $LINKDIR/picvert"
+fi
+
 # --- configuration -----------------------------------------------------------
 
 CONFIG=${PICVERT_CONFIG_FILE:-/etc/picvert.yaml}
@@ -394,7 +409,7 @@ Next, in this order:
   3. Make the first CV, from the administration page on port 3001 with the
      password above, or from here:
 
-       $PREFIX/picvert new --slug jean --name "Jean Dupont"
+       picvert new --slug jean --name "Jean Dupont"
 
 THE ADMINISTRATION PORT IS REACHABLE FROM YOUR NETWORK, and the password above
 is what stands in front of it. It manages every CV and displays every private
@@ -412,11 +427,11 @@ $CONFIG and reach it over SSH:
 
 Backups run nightly into $DATA/backups, keeping a fortnight. Take one now with:
 
-  $PREFIX/picvert backup
+  picvert backup
 
 and put one back with:
 
-  $PREFIX/picvert restore --from <file>
+  picvert restore --from <file>
 
 Copy them somewhere that is not this machine. A backup on the disk it is
 protecting is a backup for exactly one kind of accident.
