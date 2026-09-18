@@ -271,7 +271,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		sendJSON(w, map[string]any{"ok": true, "profiles": len(s.Profiles.List())})
+		sendJSON(w, map[string]any{"ok": true, "profiles": s.Profiles.Count()})
 	})
 
 	// Crawlers are kept off the private surface, and off the artefacts.
