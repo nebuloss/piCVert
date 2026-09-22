@@ -277,3 +277,39 @@ func TestPublicPortFallsBackWhenTheAddressIsOdd(t *testing.T) {
 		}
 	}
 }
+
+// The editor offers a way to reach both of its panes on a phone.
+//
+// It is a form beside a preview, and below about 900 px they stacked. Measured
+// on a 375x667 screen that gave the form 97 pixels above 573 pixels of
+// preview: the field being typed into was a sliver, under a rendering of an A4
+// page far too small to read. Neither pane was usable, so the editor was
+// desktop-only without ever saying so.
+//
+// The panes are now shown one at a time, chosen by a switch — which has to be
+// in the page for the stylesheet and the script to have anything to work with.
+func TestTheEditorPageCarriesItsPaneSwitch(t *testing.T) {
+	s, slug := service(t)
+	h := s.Handler()
+	links, err := s.Tokens.ForProfile(slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := call(t, h, "GET", "/e/"+links.Edit+"/edit/", nil, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the editor answered %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, wanted := range []string{`id="panes"`, `id="pane-edit"`, `id="pane-preview"`} {
+		if !strings.Contains(body, wanted) {
+			t.Fatalf("the editor has no %s — the panes cannot be switched on a phone", wanted)
+		}
+	}
+	// Each button must name the pane it controls, or the switch is two
+	// unlabelled buttons to anybody not looking at the screen.
+	if !strings.Contains(body, `aria-controls="form"`) ||
+		!strings.Contains(body, `aria-controls="preview"`) {
+		t.Fatal("the switch does not say which pane each button shows")
+	}
+}

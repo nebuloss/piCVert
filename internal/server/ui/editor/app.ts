@@ -22,6 +22,7 @@ import { CvDocument, Fit } from '../model/document.ts';
 import type { DeleteAnswer, Template, TemplateSummary } from '../model/api.ts';
 import { Api } from './api.ts';
 import { Autosave } from './autosave.ts';
+import { Panes } from './panes.ts';
 import type { SaveState } from './autosave.ts';
 import { Form } from './form.ts';
 import { FitReport, Preview } from './preview.ts';
@@ -76,6 +77,15 @@ class Editor {
       need<HTMLDialogElement>(root, '#busy'), need(root, '#busy-body'),
       `${base}/`,
     );
+
+    // The preview is scaled to the room it has, and a hidden pane has none —
+    // so a preview revealed by the switch would be scaled to zero until the
+    // next window resize. Re-measured on reveal instead.
+    // Not stored: it wires its own buttons and answers the media query by
+    // itself, and nothing else has a reason to switch panes.
+    new Panes(root, (pane) => {
+      if (pane === 'preview') this.scaler.apply();
+    });
 
     this.languages = new LanguageBar(
       need<HTMLSelectElement>(root, '#lang'),

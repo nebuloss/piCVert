@@ -114,7 +114,10 @@ details.panel > summary .tag {
 .row.inline { display: flex; gap: 8px; align-items: center; }
 .row.inline select { flex: 1 1 auto; }
 .photo { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.photo input { border: 0; padding: 0; }
+/* A file input's width is decided by the browser from the button's label and
+   the filename beside it, so it ignores its container and was measured three
+   pixels past the edge of a 375 px screen. Told to shrink, it obeys. */
+.photo input { border: 0; padding: 0; min-width: 0; max-width: 100%; }
 
 fieldset.list {
   border: 1px dashed var(--line); border-radius: 10px; margin: 12px 0; padding: 8px 10px;
@@ -144,9 +147,79 @@ dialog h2 { margin: 0 0 12px; font-size: 18px; }
 .gone h1 { font-size: 22px; margin: 0 0 10px; }
 .gone p { color: var(--dim); line-height: 1.6; }
 
+/* --- the pane switch ------------------------------------------------------
+ *
+ * Hidden until the screen is too narrow for both panes. On a wide one they sit
+ * side by side and a switch would be a control that changes nothing.
+ */
+#panes { display: none; }
+
 @media (max-width: 900px) {
   main { flex-direction: column; }
   #form { width: auto; min-width: 0; border-right: 0; border-bottom: 1px solid var(--line); }
+}
+
+/* --- phones ---------------------------------------------------------------
+ *
+ * ONE PANE AT A TIME, rather than two stacked.
+ *
+ * Stacked, the form got 97 pixels of a 667-pixel screen and the preview took
+ * the rest — so the field being typed into was a sliver, under a rendering of
+ * an A4 page too small to read. Measured in a browser at 375x667, not guessed
+ * at: neither pane was usable and the editor was effectively desktop-only.
+ *
+ * Both still exist and both still update; only one is on screen. The preview
+ * is a tap away, which is how often anybody actually needs to look at it while
+ * typing a line.
+ */
+@media (max-width: 760px) {
+  #panes {
+    display: flex; gap: 4px;
+    padding: 0 10px; background: var(--card);
+    border-bottom: 1px solid var(--line);
+  }
+  #panes button {
+    flex: 1 1 0; border: 0; background: none; border-radius: 0;
+    /* 44 px: reachable with a thumb at the first attempt. */
+    min-height: 44px; font-size: 14px; font-weight: 550; color: var(--dim);
+    border-bottom: 2px solid transparent;
+  }
+  #panes button[aria-selected="true"] {
+    color: var(--accent); border-bottom-color: var(--accent); font-weight: 650;
+  }
+
+  /* The pane not chosen is not merely narrow, it is GONE — so the one chosen
+     has the whole screen.
+ 
+     Written with the ID, not as `main > section[hidden]`. `#preview` sets
+     `display: flex` and an id selector outranks an element-plus-attribute one
+     whatever the order, so the hidden pane went on occupying 392 px of a
+     667 px screen while reporting itself hidden. Measured, after writing a
+     comment predicting exactly this and then getting it wrong anyway. */
+  #form[hidden], #preview[hidden] { display: none; }
+  #form, #preview { flex: 1 1 auto; min-height: 0; }
+  #form { border-bottom: 0; }
+
+  /* Controls big enough to hit, on as few rows as possible.
+ 
+     The bar was taking three rows of a 667 px screen before the form even
+     started: the name on its own line, then the language controls, then the
+     three links. The name and the save state share a line — they are one
+     sentence, "piCVert, saved" — and the rest fit on the next. */
+  #bar { padding: 8px 10px; gap: 8px; }
+  #bar strong { font-size: 14px; }
+  #bar .state { flex: 1 1 auto; font-size: 12px; }
+  #bar .spacer { display: none; }
+  #bar select { flex: 1 1 auto; min-width: 0; }
+  #bar button, #bar .button, #bar select { min-height: 40px; padding: 0 12px; }
+  /* The two that open another tab are the least used while editing, so they
+     are the ones that shrink. */
+  #bar a.button { padding: 0 10px; font-size: 13px; }
+
+  /* Two fields side by side no longer fit; they go one under the other. */
+  .row { margin: 12px 0; }
+  .panel-body { padding: 4px 12px 12px; }
+  input, textarea, select { font-size: 16px; }
 }
 
 /* --- the CV is open somewhere else --------------------------------------- */

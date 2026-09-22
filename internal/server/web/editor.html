@@ -20,6 +20,14 @@
   <a class="button" data-kind="page" href="{{.Base}}/" target="_blank" rel="noopener">View</a>
 </header>
 
+<!-- On a phone the two panes become one at a time, chosen here.
+     Hidden on a wide screen, where both are visible together and a switch
+     would be a control that does nothing. -->
+<nav id="panes" role="tablist" aria-label="View">
+  <button id="pane-edit" role="tab" aria-selected="true" aria-controls="form">Edit</button>
+  <button id="pane-preview" role="tab" aria-selected="false" aria-controls="preview">Preview</button>
+</nav>
+
 <main>
   <section id="form" aria-label="The CV's fields"></section>
   <section id="preview">
