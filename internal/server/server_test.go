@@ -190,6 +190,12 @@ func TestBeingTheDefaultProfileDoesNotPublishIt(t *testing.T) {
 	}
 }
 
+// A link is the whole of the credential, and it opens exactly one CV.
+//
+// The API lives UNDER the link, so "this token, that CV" is no longer a thing
+// a request can express: there is no slug in the address to disagree with the
+// token. What is left to check is that an address nobody was given opens
+// nothing — and that a real one opens its own CV and no other.
 func TestALinkOnlyOpensItsOwnCV(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
@@ -198,24 +204,41 @@ func TestALinkOnlyOpensItsOwnCV(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A second CV, so that "its own" means something.
+	const otherSlug = "somebody-else"
+	if _, err := s.Store.Create(otherSlug, "Somebody Else", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := s.Tokens.ForProfile(otherSlug)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	cases := []struct {
-		name    string
-		headers map[string]string
-		path    string
-		want    int
+		name string
+		path string
+		want int
 	}{
-		{"no token", nil, "/api/p/" + slug, http.StatusUnauthorized},
-		{"a token nobody issued", map[string]string{"X-CV-Token": "0123456789abcdefghij"},
-			"/api/p/" + slug, http.StatusUnauthorized},
-		{"the edit link", map[string]string{"X-CV-Token": links.Edit},
-			"/api/p/" + slug, http.StatusOK},
-		{"the edit link, another CV", map[string]string{"X-CV-Token": links.Edit},
-			"/api/p/somebody-else", http.StatusForbidden},
+		{"no link at all", "/api/cv", http.StatusNotFound},
+		{"a token nobody issued", on("0123456789abcdefghij", "/api/cv"), http.StatusNotFound},
+		{"the edit link", on(links.Edit, "/api/cv"), http.StatusOK},
+		{"the other CV's link", on(theirs.Edit, "/api/cv"), http.StatusOK},
 	}
 	for _, c := range cases {
-		if got := call(t, h, "GET", c.path, nil, c.headers).Code; got != c.want {
+		if got := call(t, h, "GET", c.path, nil, nil).Code; got != c.want {
 			t.Errorf("%s answered %d, want %d", c.name, got, c.want)
 		}
+	}
+
+	// And each one brought back ITS CV, which is the half of this that a
+	// status code cannot show.
+	mine := decode(t, call(t, h, "GET", on(links.Edit, "/api/cv"), nil, nil))
+	if mine["slug"] != slug {
+		t.Errorf("the edit link answered with %v, want %q", mine["slug"], slug)
+	}
+	not := decode(t, call(t, h, "GET", on(theirs.Edit, "/api/cv"), nil, nil))
+	if not["slug"] != otherSlug {
+		t.Errorf("the other link answered with %v, want %q", not["slug"], otherSlug)
 	}
 }
 
@@ -235,9 +258,8 @@ func TestAReadLinkMayReadAndMayNotWrite(t *testing.T) {
 	if got := call(t, h, "GET", "/e/"+links.Read+"/edit/", nil, nil).Code; got != http.StatusForbidden {
 		t.Errorf("the read link reached the editor: %d", got)
 	}
-	got := call(t, h, "PATCH", "/api/p/"+slug+"/identity",
-		map[string]any{"name": "Someone Else"},
-		map[string]string{"X-CV-Token": links.Read}).Code
+	got := call(t, h, "PATCH", on(links.Read, "/api/identity"),
+		map[string]any{"name": "Someone Else"}, nil).Code
 	if got != http.StatusForbidden {
 		t.Errorf("the read link wrote to the CV: %d", got)
 	}
@@ -255,15 +277,15 @@ func TestSavingValidatesAndStores(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	// A document that is not a CV never reaches the disk.
-	if got := call(t, h, "PUT", "/api/p/"+slug, map[string]any{"content": map[string]any{}}, auth).Code; got != http.StatusBadRequest {
+	if got := call(t, h, "PUT", on(edit, "/api/cv"), map[string]any{"content": map[string]any{}}, nil).Code; got != http.StatusBadRequest {
 		t.Errorf("an invalid document was accepted: %d", got)
 	}
 
-	w := call(t, h, "PATCH", "/api/p/"+slug+"/identity",
-		map[string]any{"name": "Jeanne Dupont"}, auth)
+	w := call(t, h, "PATCH", on(edit, "/api/identity"),
+		map[string]any{"name": "Jeanne Dupont"}, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("the save failed: %d %s", w.Code, w.Body.String())
 	}
@@ -295,7 +317,7 @@ func TestUnknownPropertiesSurviveARoundTrip(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	doc, err := s.Store.Read(slug, "")
 	if err != nil {
@@ -305,7 +327,7 @@ func TestUnknownPropertiesSurviveARoundTrip(t *testing.T) {
 	// hand it back untouched, or opening a CV in the wrong version quietly
 	// deletes part of it.
 	doc["somethingFromTheFuture"] = map[string]any{"kept": true}
-	if w := call(t, h, "PUT", "/api/p/"+slug, doc, auth); w.Code != http.StatusOK {
+	if w := call(t, h, "PUT", on(edit, "/api/cv"), doc, nil); w.Code != http.StatusOK {
 		t.Fatalf("the save failed: %d %s", w.Code, w.Body.String())
 	}
 
@@ -323,7 +345,7 @@ func TestThePreviewLaysOutAnUnsavedDocument(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	doc, err := s.Store.Read(slug, "")
 	if err != nil {
@@ -333,7 +355,7 @@ func TestThePreviewLaysOutAnUnsavedDocument(t *testing.T) {
 	identity, _ := content["identity"].(map[string]any)
 	identity["name"] = "Not Yet Saved"
 
-	answer := decode(t, call(t, h, "POST", "/api/p/"+slug+"/preview", doc, auth))
+	answer := decode(t, call(t, h, "POST", on(edit, "/api/preview"), doc, nil))
 	html, _ := answer["html"].(string)
 	if html == "" {
 		t.Fatal("the preview drew nothing")
@@ -354,12 +376,12 @@ func TestTheJournalRecordsWhatChanged(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	call(t, h, "PATCH", "/api/p/"+slug+"/identity", map[string]any{"name": "First"}, auth)
-	call(t, h, "PATCH", "/api/p/"+slug+"/identity", map[string]any{"name": "Second"}, auth)
+	call(t, h, "PATCH", on(edit, "/api/identity"), map[string]any{"name": "First"}, nil)
+	call(t, h, "PATCH", on(edit, "/api/identity"), map[string]any{"name": "Second"}, nil)
 
-	answer := decode(t, call(t, h, "GET", "/api/p/"+slug+"/history", nil, auth))
+	answer := decode(t, call(t, h, "GET", on(edit, "/api/history"), nil, nil))
 	entries, _ := answer["entries"].([]any)
 	if len(entries) == 0 {
 		t.Fatal("nothing was recorded")
@@ -504,3 +526,10 @@ func TestADifferentLanguageIsStillAccepted(t *testing.T) {
 		t.Fatalf("adding %q was refused: %v", other, err)
 	}
 }
+
+// on builds an address on a private link.
+//
+// Every test that used to send an X-CV-Token header says which link it is
+// using by the address it asks for instead — which is the whole of the change
+// this helper exists to express.
+func on(token, suffix string) string { return "/e/" + token + suffix }

@@ -218,7 +218,14 @@ export interface HistoryAnswer extends Answer {
   entries: HistoryEntry[];
 }
 
-export interface LinksAnswer extends Answer {
+/** What GET /e/<token>/info answers: everything the link itself does not say. */
+export interface InfoAnswer extends Answer {
+  slug: string;
+  mode: 'edit' | 'read';
+  name: string;
+  languages: string[];
+  canEdit: boolean;
+  /** The read-only link, absolute, safe to hand out. */
   read: string;
 }
 
@@ -264,6 +271,39 @@ export interface ProfileSummary {
   templateMissing?: boolean;
   sections?: number;
   photo?: boolean;
+  /** How many fetches of this CV are on record. See internal/access. */
+  visits?: number;
+}
+
+/** One address that fetched a CV, and what it did. See internal/access. */
+export interface Visitor {
+  ip: string;
+  hits: number;
+  first: string;
+  last: string;
+  agent?: string;
+  viewer: number;
+  pages: number;
+  pdfs: number;
+  /** Whether this address ever used the edit link, i.e. is the author. */
+  author: boolean;
+  /** Which CVs this address fetched, most recently touched first. */
+  cvs?: string[];
+}
+
+export interface AccessAnswer extends Answer {
+  access: {
+    visitors: Visitor[];
+    /** Everything recorded, including entries the ring has since dropped. */
+    total: number;
+    kept: number;
+    since?: string;
+  };
+  /** How long an entry is kept, and how many per CV: what an empty list means. */
+  retainHours: number;
+  perCV: number;
+  /** When this process started, since the log does not survive a restart. */
+  since: string;
 }
 
 export interface InventoryAnswer extends Answer {

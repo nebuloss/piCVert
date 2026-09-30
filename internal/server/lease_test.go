@@ -47,15 +47,15 @@ func TestTheSecondEditorIsToldRatherThanRefusedLater(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	first := newWindow(t, h, auth).lease("/api/p/" + slug + "/lease")
+	first := newWindow(t, h, nil).lease(on(edit, "/api/lease"))
 	if first["held"] != true {
 		t.Fatal("the first editor was refused the lease")
 	}
 
 	// A second window, with the SAME link — which is the whole situation.
-	second := newWindow(t, h, auth).lease("/api/p/" + slug + "/lease")
+	second := newWindow(t, h, nil).lease(on(edit, "/api/lease"))
 	if second["held"] != false {
 		t.Fatal("two windows were granted the lease at once")
 	}
@@ -72,13 +72,13 @@ func TestAWindowWithoutTheLeaseCannotSave(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	holder := newWindow(t, h, auth)
-	holder.lease("/api/p/" + slug + "/lease")
+	holder := newWindow(t, h, nil)
+	holder.lease(on(edit, "/api/lease"))
 
-	other := newWindow(t, h, auth)
-	other.lease("/api/p/" + slug + "/lease")
+	other := newWindow(t, h, nil)
+	other.lease(on(edit, "/api/lease"))
 
 	doc, err := s.Store.Read(slug, "")
 	if err != nil {
@@ -86,11 +86,11 @@ func TestAWindowWithoutTheLeaseCannotSave(t *testing.T) {
 	}
 
 	// The holder may write.
-	if w := holder.do("PUT", "/api/p/"+slug, doc); w.Code != http.StatusOK {
+	if w := holder.do("PUT", on(edit, "/api/cv"), doc); w.Code != http.StatusOK {
 		t.Fatalf("the lease holder could not save: %d %s", w.Code, w.Body.String())
 	}
 	// The other may not — and is told why, rather than silently succeeding.
-	if w := other.do("PUT", "/api/p/"+slug, doc); w.Code != http.StatusLocked {
+	if w := other.do("PUT", on(edit, "/api/cv"), doc); w.Code != http.StatusLocked {
 		t.Fatalf("a window without the lease saved anyway: %d", w.Code)
 	}
 }
@@ -101,15 +101,15 @@ func TestACallerWithNoLeaseIsStillServed(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	newWindow(t, h, auth).lease("/api/p/" + slug + "/lease") // somebody holds it
+	newWindow(t, h, nil).lease(on(edit, "/api/lease")) // somebody holds it
 
 	doc, err := s.Store.Read(slug, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := call(t, h, "PUT", "/api/p/"+slug, doc, auth); w.Code != http.StatusOK {
+	if w := call(t, h, "PUT", on(edit, "/api/cv"), doc, nil); w.Code != http.StatusOK {
 		t.Fatalf("a caller presenting no editor identity was refused: %d", w.Code)
 	}
 }
@@ -119,13 +119,13 @@ func TestReleasingLetsTheNextPersonIn(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	leaving := newWindow(t, h, auth)
-	leaving.lease("/api/p/" + slug + "/lease")
-	leaving.do("DELETE", "/api/p/"+slug+"/lease", nil)
+	leaving := newWindow(t, h, nil)
+	leaving.lease(on(edit, "/api/lease"))
+	leaving.do("DELETE", on(edit, "/api/lease"), nil)
 
-	next := newWindow(t, h, auth).lease("/api/p/" + slug + "/lease")
+	next := newWindow(t, h, nil).lease(on(edit, "/api/lease"))
 	if next["held"] != true {
 		t.Fatal("the lease was not free after being released")
 	}
@@ -137,15 +137,15 @@ func TestASilentWindowLosesTheLease(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	newWindow(t, h, auth).lease("/api/p/" + slug + "/lease")
+	newWindow(t, h, nil).lease(on(edit, "/api/lease"))
 
 	// Rather than waiting three quarters of a minute, move the clock.
 	at := time.Now()
 	s.Leases.Now = func() time.Time { return at.Add(lease.DefaultTTL * 2) }
 
-	next := newWindow(t, h, auth).lease("/api/p/" + slug + "/lease")
+	next := newWindow(t, h, nil).lease(on(edit, "/api/lease"))
 	if next["held"] != true {
 		t.Fatal("a window that stopped talking kept the lease past its expiry")
 	}
@@ -156,14 +156,14 @@ func TestEditingOneLanguageDoesNotLockTheOther(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	if _, err := s.Store.AddLanguage(slug, "en", ""); err != nil {
 		t.Fatal(err)
 	}
 
-	first := newWindow(t, h, auth).lease("/api/p/" + slug + "/lease")
-	second := newWindow(t, h, auth).lease("/api/p/" + slug + "/lease?lang=en")
+	first := newWindow(t, h, nil).lease(on(edit, "/api/lease"))
+	second := newWindow(t, h, nil).lease(on(edit, "/api/lease?lang=en"))
 	if first["held"] != true || second["held"] != true {
 		t.Fatal("editing the default language blocked editing a translation")
 	}
@@ -182,19 +182,19 @@ func TestReloadingYourOwnEditorKeepsTheLease(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	win := newWindow(t, h, auth)
+	win := newWindow(t, h, nil)
 	// A tab says which tab it is from its very first request, because the
 	// nonce is made before anything is asked for.
-	win.auth = merge(auth, map[string]string{"X-CV-Window": "tab-one"})
+	win.auth = map[string]string{"X-CV-Window": "tab-one"}
 
-	if win.lease("/api/p/" + slug + "/lease")["held"] != true {
+	if win.lease(on(edit, "/api/lease"))["held"] != true {
 		t.Fatal("the first request for the lease was refused")
 	}
 	// What a reload is: the same browser, the same tab, asking again — and
 	// now carrying the cookie the first request was given.
-	if win.lease("/api/p/" + slug + "/lease")["held"] != true {
+	if win.lease(on(edit, "/api/lease"))["held"] != true {
 		t.Fatal("reloading the editor locked the person out of their own CV")
 	}
 }
@@ -211,19 +211,19 @@ func TestTwoTabsOfOneBrowserAreTwoEditors(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	first := newWindow(t, h, auth)
-	first.auth = merge(auth, map[string]string{"X-CV-Window": "tab-one"})
-	if first.lease("/api/p/" + slug + "/lease")["held"] != true {
+	first := newWindow(t, h, nil)
+	first.auth = map[string]string{"X-CV-Window": "tab-one"}
+	if first.lease(on(edit, "/api/lease"))["held"] != true {
 		t.Fatal("the first tab was refused")
 	}
 
 	// The second tab: same browser, so it carries the same cookie.
-	second := newWindow(t, h, auth)
-	second.auth = merge(auth, map[string]string{"X-CV-Window": "tab-two"})
+	second := newWindow(t, h, nil)
+	second.auth = map[string]string{"X-CV-Window": "tab-two"}
 	second.jar = first.jar
-	if second.lease("/api/p/" + slug + "/lease")["held"] != false {
+	if second.lease(on(edit, "/api/lease"))["held"] != false {
 		t.Fatal("two tabs of one browser both hold the lease")
 	}
 
@@ -232,10 +232,10 @@ func TestTwoTabsOfOneBrowserAreTwoEditors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := first.do("PUT", "/api/p/"+slug, doc); w.Code != http.StatusOK {
+	if w := first.do("PUT", on(edit, "/api/cv"), doc); w.Code != http.StatusOK {
 		t.Fatalf("the holder could not save: %d", w.Code)
 	}
-	if w := second.do("PUT", "/api/p/"+slug, doc); w.Code != http.StatusLocked {
+	if w := second.do("PUT", on(edit, "/api/cv"), doc); w.Code != http.StatusLocked {
 		t.Fatalf("the second tab saved anyway: %d", w.Code)
 	}
 }
@@ -285,7 +285,7 @@ func TestOneCVCannotGrowWithoutEnd(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	// A small ceiling, so the test is about the rule rather than about
 	// writing eight megabytes.
@@ -294,8 +294,8 @@ func TestOneCVCannotGrowWithoutEnd(t *testing.T) {
 	refused := false
 	for a := 'a'; a <= 'z' && !refused; a++ {
 		for b := 'a'; b <= 'z'; b++ {
-			w := call(t, h, "POST", "/api/p/"+slug+"/languages",
-				map[string]any{"lang": string(a) + string(b)}, auth)
+			w := call(t, h, "POST", on(edit, "/api/languages"),
+				map[string]any{"lang": string(a) + string(b)}, nil)
 			if w.Code == http.StatusInsufficientStorage {
 				refused = true
 				break

@@ -29,7 +29,13 @@ import (
 // authenticated surface at all, and there is nothing to guess anywhere.
 //
 //	public port  ->  the CVs, and the private links /e/<token>
-//	admin port   ->  list, view, delete CVs and their links
+//	admin port   ->  list, create, delete CVs and their links
+//
+// ONE SURFACE SERVES CONTENT, and it is not this one. A CV is reached through
+// its read link, which is unguessable and therefore private as long as its
+// holder keeps it so; publishing a CV means handing that link over. The
+// administration port lists those links and never renders what is behind
+// them — see the note where /view used to be.
 //
 // NEVER to be proxied outwards: this interface has no access control, by
 // construction. Do not add a password to it either — that would make it the one
@@ -110,12 +116,53 @@ func (s *Server) AdminHandler() http.Handler {
 		sendJSON(w, map[string]any{"ok": true, "templates": out})
 	})
 
-	mux.HandleFunc("GET /view/{slug}/cv.html", s.adminProfile(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
-		s.sendPage(w, r, p, lang(r))
-	}))
-	mux.HandleFunc("GET /view/{slug}/cv.pdf", s.adminProfile(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
-		s.sendPDF(w, r, p, lang(r))
-	}))
+	// THIS PORT DOES NOT SERVE CVs.
+	//
+	// It used to: /view/{slug}/cv.html and /view/{slug}/cv.pdf rendered any CV
+	// on demand, without a token, on the port that is documented above as
+	// having no access control by construction. That made three surfaces
+	// capable of handing out a CV where the design has two, and the third was
+	// the one nobody proxies and therefore nobody thinks about.
+	//
+	// It was there so an administrator could look at a CV without holding a
+	// link. They do not need one: the inventory shows every read link, and the
+	// read link IS how a CV is published — it is served by the public port,
+	// which is the only thing that serves content. The administration page
+	// links straight to it.
+	//
+	// TestTheAdminPortServesNoCVContent keeps this true.
+
+	// Who has fetched the CVs, grouped by address.
+	//
+	// The one question a link-shared CV raises and nothing could answer: has
+	// anybody opened it, and is it one person or a mailing list. Whole-service
+	// by default and narrowed to one CV by ?slug= — ONE route rather than two,
+	// because the per-CV view is a filter of this one and two endpoints
+	// answering the same question eventually answer it differently.
+	//
+	// On THIS port only — an address is personal data, and the surface that
+	// hands it out is the one that is never proxied outwards.
+	mux.HandleFunc("GET /api/access", func(w http.ResponseWriter, r *http.Request) {
+		summary := s.Access.Overall()
+		if slug := r.URL.Query().Get("slug"); slug != "" {
+			// Through the repository, so a slug nobody owns is a 404 rather
+			// than an empty list that reads as "nobody came".
+			p, err := s.Profiles.Get(slug)
+			if err != nil {
+				fail(w, http.StatusNotFound, fmt.Errorf("unknown CV"))
+				return
+			}
+			summary = s.Access.For(p.Slug)
+		}
+		sendJSON(w, map[string]any{
+			"ok": true, "access": summary,
+			// What the page must say when the list is short or empty, so an
+			// empty list is never read as "nobody came".
+			"retainHours": int(s.Access.Retain.Hours()),
+			"perCV":       s.Access.PerCV,
+			"since":       s.Metrics.Started.UTC().Format(time.RFC3339),
+		})
+	})
 
 	mux.HandleFunc("POST /api/p/{slug}/links/rotate", s.adminProfile(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		mode := tokens.Mode(r.URL.Query().Get("mode"))
@@ -295,9 +342,14 @@ func (s *Server) inventory(r *http.Request) map[string]any {
 		start = end
 	}
 
+	// One pass for every CV's visit count rather than a lock per row: the
+	// inventory draws thirty rows and this is one question.
+	visits := s.Access.Counts()
 	described := make([]map[string]any, 0, end-start)
 	for _, p := range matched[start:end] {
-		described = append(described, s.describeProfile(p))
+		row := s.describeProfile(p)
+		row["visits"] = visits[p.Slug]
+		described = append(described, row)
 	}
 
 	defaultSlug := ""
@@ -479,6 +531,11 @@ func (s *Server) Trash(p *profiles.Profile) error {
 	}
 	writeJSON(target+".json", note)
 	s.forget(p)
+	// And who read it. A CV that has been deleted leaving its readers'
+	// addresses behind in memory is the one way that record could outlive its
+	// own subject. Restoring brings the CV back, not the log — which is the
+	// right way round for a thing kept this briefly anyway.
+	s.Access.Forget(p.Slug)
 	return nil
 }
 

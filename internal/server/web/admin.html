@@ -28,21 +28,42 @@
 </p>
 
 <main>
-  <section id="metrics" aria-label="What the service is doing"></section>
+  <!-- Warnings live ABOVE the tabs, never inside one.
+       Each is a thing somebody would do something about today — no backup, no
+       password, the CVs near their ceiling. Filed under a tab they are
+       invisible until somebody goes looking, and nobody goes looking for a
+       warning they have not been shown. The NUMBERS are the opposite: one
+       goes to read those, so they are a tab. -->
+  <div id="alerts" aria-label="Things to act on"></div>
 
-  <!-- Two views, never stacked.
-       The CVs and the trash are not looked at in the same motion: one is the
-       current inventory, the other a safety net opened when something has
-       gone missing. Stacking them padded the inventory with what nobody was
-       looking for. -->
+  <!-- Top-level tabs, one view at a time.
+       These three are not looked at in the same motion. The inventory is what
+       the page is for; the trash is a safety net opened when something has
+       gone missing; the numbers are read when somebody wonders how the
+       service is doing. Stacked, the two that are not wanted pad the one that
+       is — the numbers alone pushed the first CV a third of the way down the
+       page on every visit. -->
   <nav class="views" role="tablist" aria-label="Views">
     <button class="view-tab" id="tab-cvs" role="tab" aria-selected="true"
             aria-controls="view-cvs">
       CVs <span class="badge" id="badge-cvs">—</span>
     </button>
-    <button class="view-tab" id="tab-trash" role="tab" aria-selected="false"
-            aria-controls="view-trash">
-      Set aside <span class="badge" id="badge-trash">—</span>
+    <button class="view-tab" id="tab-requests" role="tab" aria-selected="false"
+            aria-controls="view-requests">
+      Requests <span class="badge" id="badge-requests">—</span>
+    </button>
+    <!-- "Deleted", not "Set aside".
+         Set aside is what the software does; deleted is what the person did,
+         and a list of things they deleted is what they will look for. The
+         lede says they can still be recovered, which is the reassurance the
+         euphemism was reaching for and failing to give. -->
+    <button class="view-tab" id="tab-deleted" role="tab" aria-selected="false"
+            aria-controls="view-deleted">
+      Deleted <span class="badge" id="badge-deleted">—</span>
+    </button>
+    <button class="view-tab" id="tab-service" role="tab" aria-selected="false"
+            aria-controls="view-service">
+      Service <span class="badge" id="badge-service">—</span>
     </button>
   </nav>
 
@@ -63,12 +84,35 @@
     <div id="list"></div>
   </section>
 
-  <section id="view-trash" role="tabpanel" aria-labelledby="tab-trash" hidden>
+  <section id="view-requests" role="tabpanel" aria-labelledby="tab-requests" hidden>
+    <p class="lede">
+      Who has fetched a CV, grouped by the address they came from. A CV here is
+      published by handing over a link, so this is the only thing that can say
+      whether it reached one person or a mailing list.
+    </p>
+    <div class="bar">
+      <input type="search" id="req-q"
+             placeholder="Filter by address, CV or browser"
+             aria-label="Filter requests" autocomplete="off" spellcheck="false">
+      <span class="muted" id="req-count"></span>
+    </div>
+    <div id="requests"></div>
+  </section>
+
+  <section id="view-deleted" role="tabpanel" aria-labelledby="tab-deleted" hidden>
     <p class="lede">
       Deleted CVs wait here before being erased for good, so a mistake can be
       undone. Each shows how long is left.
     </p>
     <div id="trash"></div>
+  </section>
+
+  <section id="view-service" role="tabpanel" aria-labelledby="tab-service" hidden>
+    <p class="lede">
+      What this service has been doing since it started. Every number here is
+      counted, not sampled.
+    </p>
+    <div id="metrics"></div>
   </section>
 </main>
 

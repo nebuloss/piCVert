@@ -15,8 +15,8 @@ import { toast } from '../lib/toast.ts';
 import { copy, el, need, replace } from '../lib/dom.ts';
 import type { Child } from '../lib/dom.ts';
 import type {
-  AdminTemplatesAnswer, CreateAnswer, InventoryAnswer, MetricsAnswer,
-  ProfileSummary, TrashAnswer, TrashEntry,
+  AccessAnswer, AdminTemplatesAnswer, CreateAnswer, InventoryAnswer,
+  MetricsAnswer, ProfileSummary, TrashAnswer, TrashEntry, Visitor,
 } from '../model/api.ts';
 
 /** Bytes and dates, rendered the same way everywhere they appear. */
@@ -30,6 +30,27 @@ const show = {
     if (!stamp) return '';
     const date = new Date(stamp);
     return Number.isNaN(date.valueOf()) ? stamp : date.toLocaleString();
+  },
+  /**
+   * How long ago, in the few characters a scanned list can spare.
+   *
+   * A full timestamp is twenty characters that are the same for every CV
+   * touched this week. What a list is read for is which one moved LAST, and
+   * "2 h" answers that where "22/09/2026, 14:03" has to be decoded first. The
+   * exact moment is on the line's tooltip and in the details.
+   */
+  ago(stamp?: string): string {
+    if (!stamp) return '';
+    const ms = Date.now() - new Date(stamp).valueOf();
+    if (Number.isNaN(ms)) return '';
+    if (ms < 0 || ms < 60_000) return 'just now';
+    const minutes = Math.floor(ms / 60_000);
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} h`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days} d`;
+    return new Date(stamp).toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
   },
   /**
    * How long is left, said the way a person would.
@@ -59,7 +80,12 @@ const show = {
  * because it looks like observability while saying nothing.
  */
 class MetricsPanel {
-  constructor(private readonly node: HTMLElement, private readonly api: HttpClient) {}
+  constructor(
+    private readonly node: HTMLElement,
+    private readonly alerts: HTMLElement,
+    private readonly badge: HTMLElement,
+    private readonly api: HttpClient,
+  ) {}
 
   async refresh(): Promise<void> {
     let answer: MetricsAnswer;
@@ -72,8 +98,13 @@ class MetricsPanel {
     }
     const m = answer.metrics;
 
-    // Warnings first, because they are the reason to look. Each is a thing
-    // somebody would do something about today.
+    // WARNINGS GO OUTSIDE THE TABS, and that is the whole reason this method
+    // writes to two places.
+    //
+    // Each is a thing somebody would act on today. Filed inside the Service
+    // tab they are invisible until somebody goes and looks, and nobody goes
+    // looking for a warning they have not been shown — which would make the
+    // tabs a way of hiding exactly the part of this panel that is urgent.
     const warnings: Child[] = [];
     if (!answer.domain) {
       warnings.push(this.warn(
@@ -89,9 +120,14 @@ class MetricsPanel {
     if (answer.bytes > answer.limits.profileMB * answer.profiles * 1024 * 1024 * 0.8) {
       warnings.push(this.warn('The CVs are near their combined ceiling.'));
     }
+    replace(this.alerts, warnings);
+
+    // The tab carries the count, so the number of things wrong is legible
+    // from the other two views.
+    this.badge.textContent = warnings.length ? String(warnings.length) : 'ok';
+    this.badge.classList.toggle('pending', warnings.length > 0);
 
     replace(this.node, [
-      ...warnings,
       el('div', { class: 'metrics' }, [
         this.stat('CVs', String(answer.profiles), show.bytes(answer.bytes)),
         this.stat('being edited', String(answer.editing), 'right now'),
@@ -157,46 +193,6 @@ function publicHref(path: string): string {
   // because the two ports are two listeners in one process.
   const port = document.body.dataset.publicPort || '3000';
   return `${location.protocol}//${location.hostname}:${port}${path}`;
-}
-
-/** A column: what it is called, and how much of the width it gets. */
-interface Column {
-  label: string;
-  width: string;
-}
-
-/**
- * table builds a headed table, since both halves of this page are one.
- *
- * The widths are DECLARED, and the table is laid out fixed. Left to itself the
- * browser gives the room to whichever column holds the longest unbreakable run
- * of characters — here that is a 192-bit token inside a URL, which has no word
- * breaks in it at all. It took the width, and "Jean Dupont" was broken across
- * two lines to pay for it.
- *
- * Wrapped in a div because the rounded corners belong to the wrapper:
- * `overflow: hidden` on a <table> is honoured by some browsers and quietly
- * dropped by others, so the corners were square on exactly one machine.
- */
-function table(columns: Column[], rows: HTMLElement[]): HTMLElement {
-  // Each cell carries its column's name. On a narrow screen the table becomes
-  // a list of cards, and a value with no header above it is a number nobody
-  // can identify — "6 kB · 0 entries" means nothing on its own. The label is
-  // drawn from this same array, so a renamed column cannot disagree with
-  // itself in the two layouts.
-  for (const row of rows) {
-    row.querySelectorAll('td').forEach((cell, i) => {
-      const label = columns[i]?.label;
-      if (label) cell.dataset.label = label;
-    });
-  }
-  return el('div', { class: 'tablewrap' }, [
-    el('table', {}, [
-      el('colgroup', {}, columns.map((c) => el('col', { style: `width:${c.width}` }))),
-      el('thead', {}, [el('tr', {}, columns.map((c) => el('th', { text: c.label })))]),
-      el('tbody', {}, rows),
-    ]),
-  ]);
 }
 
 /**
@@ -364,6 +360,157 @@ class CreateForm {
   }
 }
 
+/**
+ * RequestsView is who has fetched the CVs, grouped by address.
+ *
+ * # WHY GROUPED AND NOT A LIST OF REQUESTS
+ *
+ * A stream of forty lines is forty things to add up by eye. The question being
+ * asked is "has anybody opened this, and is it one person or six" — which is
+ * the grouping itself, not the entries. Each row is an address, what it
+ * fetched, which CVs, and when it was last here.
+ *
+ * # WHY A WHOLE-SERVICE VIEW AND NOT A PANEL PER CV
+ *
+ * This began inside each CV's details, which answered "who read THIS" and
+ * nothing else. The answer that actually matters is the one no single panel
+ * can show: an address that appears against one CV is a reader, and an address
+ * appearing against nine is either the owner or somebody walking the tokens.
+ * Seeing that from per-CV panels means opening thirty of them and remembering
+ * what was in each.
+ *
+ * The per-CV question is still asked — by filtering this to one CV, which is
+ * what the button in a CV's details does.
+ *
+ * # WHY IT SAYS WHAT IT DOES NOT KNOW
+ *
+ * The log is held in memory and bounded, so an empty list can mean "nobody
+ * came" or "this service restarted an hour ago". Those are opposite answers
+ * and a view that cannot tell them apart must say so, or the first person to
+ * read the second as the first will conclude their CV was never opened.
+ */
+class RequestsView {
+  private answer?: AccessAnswer;
+  private filter = '';
+
+  constructor(
+    private readonly node: HTMLElement,
+    private readonly search: HTMLInputElement,
+    private readonly count: HTMLElement,
+    private readonly badge: HTMLElement,
+    private readonly api: HttpClient,
+  ) {
+    let typing = 0;
+    this.search.addEventListener('input', () => {
+      clearTimeout(typing);
+      typing = window.setTimeout(() => {
+        this.filter = this.search.value.trim().toLowerCase();
+        this.draw();
+      }, 150);
+    });
+  }
+
+  /** Narrow to one CV, and say so in the box so it can be cleared. */
+  only(slug: string): void {
+    this.filter = slug.toLowerCase();
+    this.search.value = slug;
+    this.draw();
+  }
+
+  async refresh(): Promise<void> {
+    try {
+      this.answer = await this.api.get<AccessAnswer>('/api/access');
+    } catch (error) {
+      replace(this.node, [el('div', { class: 'empty',
+        text: error instanceof Error ? error.message : String(error) })]);
+      return;
+    }
+    // The tab carries the number of addresses, which is the figure somebody
+    // would look at the tab for: how many people, not how many requests.
+    this.badge.textContent = String(this.answer.access.visitors.length);
+    this.draw();
+  }
+
+  private draw(): void {
+    const answer = this.answer;
+    if (!answer) return;
+    const { visitors, total, kept } = answer.access;
+
+    const shown = this.filter
+      ? visitors.filter((v) => this.matches(v))
+      : visitors;
+
+    // Said whether the list is empty or not: the reader cannot otherwise know
+    // whether "nothing" means nothing happened or nothing is remembered.
+    const scope = el('div', { class: 'access-scope', text:
+      `Kept in memory only, for ${Math.round(answer.retainHours / 24)} days or `
+      + `${answer.perCV} fetches per CV, and cleared by a restart. `
+      + `Recording since ${show.when(answer.since)}.` });
+
+    this.count.textContent = visitors.length
+      ? `${shown.length} of ${visitors.length} address(es) — ${total} fetches`
+      : '';
+
+    if (!shown.length) {
+      replace(this.node, [
+        el('div', { class: 'empty', text: this.filter
+          ? 'No address matches that.'
+          : 'No fetches recorded.' }),
+        scope,
+      ]);
+      return;
+    }
+
+    const dropped = total > kept
+      ? el('div', { class: 'access-scope', text:
+          `${total} fetches in total; the most recent ${kept} are grouped above.` })
+      : null;
+
+    replace(this.node, [
+      el('div', { class: 'access-rows' }, shown.map((v) => this.row(v))),
+      dropped,
+      scope,
+    ]);
+  }
+
+  /** Address, CV or browser — the three things somebody arrives knowing. */
+  private matches(v: Visitor): boolean {
+    const hay = [v.ip, v.agent ?? '', ...(v.cvs ?? [])].join(' ').toLowerCase();
+    return hay.includes(this.filter);
+  }
+
+  private row(v: Visitor): HTMLElement {
+    // What it fetched, in the words that distinguish the three. A PDF is
+    // somebody KEEPING the CV, which is a different act from looking at it.
+    const what = [
+      v.viewer ? `${v.viewer} open` : null,
+      v.pages ? `${v.pages} page` : null,
+      v.pdfs ? `${v.pdfs} pdf` : null,
+    ].filter(Boolean).join(', ');
+
+    const cvs = v.cvs ?? [];
+    return el('div', { class: `access-row${v.author ? ' author' : ''}` }, [
+      el('code', { class: 'access-ip', text: v.ip }),
+      // The author's own address, marked. Without it an afternoon of editing
+      // reads as an audience.
+      v.author ? el('span', { class: 'tag', text: 'author' }) : null,
+      el('span', { class: 'access-cvs', text: cvs.slice(0, 2).join(', '),
+        title: cvs.join(', ') }),
+      cvs.length > 2
+        ? el('span', { class: 'access-more', text: `+${cvs.length - 2}`,
+            title: cvs.join(', ') })
+        : null,
+      el('span', { class: 'access-what', text: what }),
+      v.agent ? el('span', { class: 'access-agent', text: v.agent }) : null,
+      el('span', { class: 'gap' }),
+      el('span', {
+        class: 'access-last', text: show.ago(v.last),
+        title: `first ${show.when(v.first)}, last ${show.when(v.last)}`,
+      }),
+    ]);
+  }
+}
+
 interface ProfileActions {
   /**
    * Renew one link. The MODE matters: the two links are independent, and the
@@ -373,10 +520,40 @@ interface ProfileActions {
    */
   rotate: (profile: ProfileSummary, mode: 'edit' | 'read') => void;
   remove: (profile: ProfileSummary) => void;
+  /** Show who has fetched this CV, in the view that holds every CV's. */
+  requests: (profile: ProfileSummary) => void;
 }
 
-/** ProfileTable is the inventory of CVs. */
-class ProfileTable {
+/**
+ * ProfileList is the inventory of CVs: ONE LINE EACH.
+ *
+ * # WHY A LINE AND NOT A ROW OF COLUMNS
+ *
+ * This was a table of seven columns, and a CV occupied about a hundred and ten
+ * pixels of it — two link rows of five controls each, a stack of tags, a size,
+ * a date, four buttons. Ten CVs did not fit on a screen. But the reason to
+ * open this page is almost never a particular CV: it is to see WHAT IS THERE,
+ * and the columns that made a row tall were the ones nobody reads while doing
+ * that. A token fingerprint is not scanned down a column; it is looked at once,
+ * when a link is being renewed.
+ *
+ * So the line carries what identifies a CV and what one does to it constantly,
+ * and everything else moves behind a disclosure on the same line. Nothing was
+ * removed from the page — the size, the history, the role, both links with
+ * their fingerprints, both renewals and the deletion are all still one click
+ * away, and that click is on the CV itself.
+ *
+ * It also retires the narrow-screen rules that turned the table back into
+ * cards: a line that is already a line needs no second layout.
+ */
+class ProfileList {
+  /** The slugs whose details are open, kept ACROSS a refresh.
+   *
+   * Every action on this page reloads the inventory, so a panel that lived in
+   * the DOM alone closed itself the moment it was used — renew a link and the
+   * thing you were looking at vanishes. */
+  private readonly open = new Set<string>();
+
   constructor(
     private readonly node: HTMLElement,
     private readonly actions: ProfileActions,
@@ -387,81 +564,141 @@ class ProfileTable {
       replace(this.node, [el('div', { class: 'empty', text: 'No CVs yet.' })]);
       return;
     }
-    replace(this.node, [table(
-      [
-        { label: 'CV', width: '13%' },
-        { label: 'access', width: '11%' },
-        { label: 'what it is', width: '17%' },
-        { label: 'private links', width: '17%' },
-        { label: 'size', width: '9%' },
-        { label: 'changed', width: '12%' },
-        // Named, because it was the answer to "why is there an open button
-        // AND a page button". The links are what you hand to somebody else;
-        // these are how you look at a CV yourself, now, without one.
-        { label: 'from here', width: '21%' },
-      ],
-      answer.profiles.map((p) => this.row(p)),
-    )]);
+    replace(this.node, [el('div', { class: 'cvs' },
+      answer.profiles.map((p) => this.entry(p)))]);
   }
 
-  private row(p: ProfileSummary): HTMLElement {
-    const cells: Child[] = [
-      el('td', { class: 'who' }, [
-        el('div', { class: 'name', text: p.name }),
-        el('code', { class: 'muted', text: p.slug }),
-      ]),
-      el('td', { class: 'access' }, [
-        el('span', {
-          class: `tag${p.public ? ' public' : ''}`,
-          text: p.public ? 'published' : 'by link only',
+  private entry(p: ProfileSummary): HTMLElement {
+    const details = el('div', { class: 'cv-details', id: `d-${p.slug}`, hidden: true });
+    let built = false;
+
+    const toggle = el('button', {
+      type: 'button', class: 'cv-open', 'aria-controls': details.id,
+      'aria-expanded': 'false', title: 'What this CV is, and its links',
+    }, [el('span', { class: 'chevron', text: '\u203a' })]);
+
+    const line = el('div', { class: 'cv' }, [
+      toggle,
+      el('span', { class: 'cv-name', text: p.name || p.slug, title: p.name }),
+      el('code', { class: 'cv-slug', text: p.slug }),
+      // Only what is NOT the default. "by link only" is how every CV starts,
+      // and a tag on every line saying so is a column of noise that hides the
+      // one line where it does not apply.
+      p.public ? el('span', { class: 'tag public', text: 'published' }) : null,
+      p.ok ? null : el('span', {
+        class: 'tag broken', text: 'unreadable', title: p.problem ?? '',
+      }),
+      p.templateMissing ? el('span', {
+        class: 'tag broken', text: 'template missing',
+        title: `This CV was written for ${p.template}, which is not installed. `
+          + 'It will not render as its author last saw it.',
+      }) : null,
+      el('span', { class: 'gap' }),
+      // How many times this CV has been fetched. On the line rather than
+      // inside, because it is the number that makes somebody open the details
+      // at all — a CV nobody has looked at and a CV fetched forty times are
+      // the same row otherwise.
+      p.visits
+        ? el('span', {
+            class: 'cv-visits', text: `${p.visits} \u00d7`,
+            title: 'Fetches recorded since this service started',
+          })
+        : null,
+      el('span', { class: 'cv-when', text: show.ago(p.updatedAt), title: show.when(p.updatedAt) }),
+      // The two things done to a CV without thinking about it: take the link
+      // its author needs, and look at the page. Everything rarer is inside.
+      this.quickCopy(p),
+      // THROUGH THE PUBLIC PORT, by the CV's own read link.
+      //
+      // These used to be /view/<slug>/… on this port, which rendered any CV
+      // without a token on the one port that has no access control. Nothing
+      // is lost by removing it: the read link is how a CV is published, and
+      // following it is also the only way to see what its reader sees.
+      el('a', {
+        class: 'tag', href: publicHref(`${p.links.read}cv.html`),
+        target: '_blank', rel: 'noopener', text: 'page',
+      }),
+      el('a', {
+        // Inline, so it opens in a tab rather than landing in the downloads
+        // folder. A CV is a thing to look at.
+        class: 'tag', href: publicHref(`${p.links.read}cv.pdf?inline=1`),
+        target: '_blank', rel: 'noopener', text: 'pdf',
+      }),
+    ]);
+
+    // Built on first opening rather than with the line. Two CopyFields per CV,
+    // each holding a listener and a timer, is a cost paid on every refresh for
+    // panels that are almost all shut.
+    const show_ = (on: boolean): void => {
+      if (on && !built) {
+        built = true;
+        replace(details, this.detailsOf(p));
+      }
+      details.hidden = !on;
+      toggle.setAttribute('aria-expanded', String(on));
+      line.classList.toggle('open', on);
+      if (on) this.open.add(p.slug); else this.open.delete(p.slug);
+    };
+    toggle.addEventListener('click', () => show_(details.hidden));
+    if (this.open.has(p.slug)) show_(true);
+
+    return el('div', { class: 'cv-entry' }, [line, details]);
+  }
+
+  /**
+   * The edit link, copied in one action.
+   *
+   * It is the only way into a CV and the thing handed over when one is made,
+   * so it is the single control on the line that is not a link to look at.
+   */
+  private quickCopy(p: ProfileSummary): HTMLElement {
+    const button = el('button', {
+      type: 'button', class: 'tag copy', text: 'copy edit link',
+      title: 'Copy this CV\u2019s private edit link',
+      onclick: () => {
+        void copy(publicHref(p.links.edit)).then((done) => {
+          button.textContent = done ? 'copied' : 'select it';
+          window.setTimeout(() => { button.textContent = 'copy edit link'; }, 1500);
+        });
+      },
+    });
+    return button;
+  }
+
+  /** What a CV IS, and the things done to it rarely. */
+  private detailsOf(p: ProfileSummary): Child[] {
+    const facts = [
+      p.template,
+      p.sections === undefined ? null : `${p.sections} sections`,
+      p.photo ? 'photo' : null,
+      p.languages.map((l) => l.lang).join(', '),
+      `${show.bytes(p.bytes)}, ${p.history} saved versions`,
+      p.updatedAt ? `changed ${show.when(p.updatedAt)}` : null,
+    ].filter(Boolean).join(' \u00b7 ');
+
+    return [
+      p.role ? el('div', { class: 'cv-role', text: p.role }) : null,
+      el('div', { class: 'cv-facts', text: facts }),
+      new CopyField('edit', p.links.edit, () => this.actions.rotate(p, 'edit')).render(),
+      new CopyField('read', p.links.read, () => this.actions.rotate(p, 'read')).render(),
+      // Not a panel of its own any more: the same rows, in the tab that holds
+      // every CV's, filtered to this one. Two places drawing the same list is
+      // two places to keep agreeing.
+      el('div', { class: 'cv-seen' }, [
+        el('button', {
+          type: 'button', class: 'tag',
+          text: p.visits ? `requests (${p.visits})` : 'requests',
+          title: 'Who has fetched this CV',
+          onclick: () => this.actions.requests(p),
         }),
-        ' ',
-        el('span', { class: 'tag', text: p.languages.map((l) => l.lang).join(', ') }),
-        // An unreadable document looked exactly like a healthy one: same row,
-        // same size, same date. The one moment anybody scans this page is when
-        // something is wrong, and it was the one thing the page did not say.
-        p.ok ? null : el('span', {
-          class: 'tag broken', text: 'unreadable', title: p.problem ?? '',
+      ]),
+      el('div', { class: 'cv-danger' }, [
+        el('button', {
+          class: 'danger', text: 'Delete this CV',
+          onclick: () => this.actions.remove(p),
         }),
-        p.templateMissing ? el('span', {
-          class: 'tag broken', text: 'template missing',
-          title: `This CV was written for ${p.template}, which is not installed. `
-            + 'It will not render as its author last saw it.',
-        }) : null,
-      ]),
-      el('td', { class: 'what' }, [
-        // What the CV IS, not merely how big it is. A list of names and byte
-        // counts is an inventory of files; this is an inventory of CVs.
-        p.role ? el('div', { class: 'role', text: p.role }) : null,
-        el('div', { class: 'muted', text: [
-          p.template,
-          p.sections === undefined ? null : `${p.sections} sections`,
-          p.photo ? 'photo' : null,
-        ].filter(Boolean).join(' · ') }),
-      ]),
-      el('td', { class: 'links' }, [
-        new CopyField('edit', p.links.edit, () => this.actions.rotate(p, 'edit')).render(),
-        new CopyField('read', p.links.read, () => this.actions.rotate(p, 'read')).render(),
-      ]),
-      el('td', { class: 'size', text: `${show.bytes(p.bytes)} \u00b7 ${p.history} entries` }),
-      el('td', { class: 'when', text: show.when(p.updatedAt) }),
-      el('td', { class: 'actions' }, [
-        // NOT "edit" and not "view": both are the private links, already
-        // offered beside the link they belong to. Having them here as well
-        // gave every row two buttons doing the same thing.
-        //
-        // What is left is what only THIS port can do: serve any CV without a
-        // token, from the port an administrator is already on. That is not a
-        // nicety — the private links go to the public port, which may not be
-        // reachable from where this page is being read, and a link that has
-        // just been renewed is one nobody has yet.
-        el('a', { class: 'tag', href: `/view/${p.slug}/cv.html`, target: '_blank', text: 'page' }),
-        ' ',
-        el('a', { class: 'tag', href: `/view/${p.slug}/cv.pdf`, target: '_blank', text: 'pdf' }),
-        el('button', { class: 'danger', text: 'delete', onclick: () => this.actions.remove(p) }),
       ]),
     ];
-    return el('tr', {}, cells);
   }
 }
 
@@ -485,7 +722,7 @@ class TrashList {
 
   show(entries: TrashEntry[]): void {
     if (!entries.length) {
-      replace(this.node, [el('div', { class: 'empty', text: 'Nothing set aside.' })]);
+      replace(this.node, [el('div', { class: 'empty', text: 'Nothing deleted.' })]);
       return;
     }
     replace(this.node, entries.map((entry) => this.card(entry)));
@@ -515,38 +752,99 @@ class TrashList {
 }
 
 /**
- * Views is the pair of tabs.
+ * Views is the page's top-level tabs: CVs, requests, deleted, service.
  *
- * The CVs and the trash are not looked at in the same motion: one is the
- * current inventory, the other a safety net opened when something has gone
- * missing. They were stacked, which padded the inventory with what nobody was
- * looking for.
+ * # WHY TABS AND NOT ONE LONG PAGE
+ *
+ * The four are not looked at in the same motion. The inventory is what the
+ * page is FOR; the requests are read when wondering whether a CV reached
+ * anybody; the deleted list is a safety net opened when something has gone
+ * missing; the numbers are read when wondering how the service is doing.
+ * Stacked, the three nobody wants pad the one they came for — the block of
+ * figures alone pushed the first CV a third of the way down the page on every
+ * single visit.
+ *
+ * What does NOT go in a tab is a warning. See MetricsPanel: those are shown
+ * above all four, because nobody goes looking for a warning they have not
+ * been shown.
+ *
+ * # THE TAB IS IN THE ADDRESS
+ *
+ * This page reloads itself after every action and is left open for hours. A
+ * tab held only in a variable is a tab that resets to the inventory whenever
+ * anything happens, which is exactly the moment somebody was reading the
+ * deleted list. It is also what makes one view a thing that can be sent to
+ * somebody, or bookmarked.
+ *
+ * # A VIEW IS TOLD WHEN IT IS OPENED
+ *
+ * The requests are fetched when their tab is first shown rather than with the
+ * page. It is the one view whose data nothing else needs, and loading it up
+ * front would put a whole-service query on every visit to an inventory.
  */
 class Views {
-  private readonly tabs: { button: HTMLButtonElement; panel: HTMLElement }[];
+  private readonly tabs: { name: string; button: HTMLButtonElement; panel: HTMLElement }[];
+  private opened?: (name: string) => void;
 
   constructor(root: Document) {
     this.tabs = [
-      { button: need<HTMLButtonElement>(root, '#tab-cvs'), panel: need(root, '#view-cvs') },
-      { button: need<HTMLButtonElement>(root, '#tab-trash'), panel: need(root, '#view-trash') },
+      { name: 'cvs', button: need<HTMLButtonElement>(root, '#tab-cvs'), panel: need(root, '#view-cvs') },
+      { name: 'requests', button: need<HTMLButtonElement>(root, '#tab-requests'), panel: need(root, '#view-requests') },
+      { name: 'deleted', button: need<HTMLButtonElement>(root, '#tab-deleted'), panel: need(root, '#view-deleted') },
+      { name: 'service', button: need<HTMLButtonElement>(root, '#tab-service'), panel: need(root, '#view-service') },
     ];
-    for (const [index, tab] of this.tabs.entries()) {
-      tab.button.addEventListener('click', () => this.select(index));
+    for (const tab of this.tabs) {
+      tab.button.addEventListener('click', () => this.select(tab.name));
+    }
+    // The back button moves between views, which is what a browser's own
+    // control is expected to do on a page whose address says which view it is.
+    window.addEventListener('hashchange', () => this.apply(this.fromHash()));
+  }
+
+  /** onOpen is called with the name of whichever view is shown. */
+  onOpen(fn: (name: string) => void): void {
+    this.opened = fn;
+    // Applied only now, so the page's own starting view — which may be any of
+    // them, since the address says which — reaches the listener too. Called
+    // in the constructor it fired before anything had subscribed, and a page
+    // loaded straight at #requests showed an empty list until the tab was
+    // clicked a second time.
+    this.apply(this.fromHash());
+  }
+
+  /** select shows a view and puts it in the address. */
+  select(name: string): void {
+    this.apply(name);
+    if (this.fromHash() !== name) {
+      // replaceState rather than a new entry: switching tabs is not a
+      // navigation to be pressed back through one at a time.
+      history.replaceState(null, '', `#${name}`);
     }
   }
 
-  select(index: number): void {
-    for (const [i, tab] of this.tabs.entries()) {
-      const on = i === index;
+  private apply(name: string): void {
+    for (const tab of this.tabs) {
+      const on = tab.name === name;
       tab.button.setAttribute('aria-selected', String(on));
       tab.panel.hidden = !on;
     }
+    this.opened?.(name);
+  }
+
+  /** The view named in the address, or the inventory for anything unknown. */
+  private fromHash(): string {
+    const name = location.hash.replace(/^#/, '');
+    const known = this.tabs.find((t) => t.name === name);
+    // The first tab is the fallback, and it is read from the list rather than
+    // written twice: a default spelt as a literal is a default that survives
+    // the tab it names being renamed.
+    return known ? known.name : (this.tabs[0]?.name ?? 'cvs');
   }
 }
 
 class Admin {
   private readonly api = new HttpClient();
-  private readonly profiles: ProfileTable;
+  private readonly profiles: ProfileList;
   private readonly trash: TrashList;
   private readonly views: Views;
 
@@ -559,6 +857,7 @@ class Admin {
   private readonly badgeCvs: HTMLElement;
   private readonly badgeTrash: HTMLElement;
   private readonly metrics: MetricsPanel;
+  private readonly requests: RequestsView;
 
   private page = 1;
 
@@ -570,12 +869,17 @@ class Admin {
     this.policy = need(root, '#policy');
     this.create = need(root, '#create');
     this.badgeCvs = need(root, '#badge-cvs');
-    this.badgeTrash = need(root, '#badge-trash');
+    this.badgeTrash = need(root, '#badge-deleted');
 
     this.views = new Views(root);
-    this.metrics = new MetricsPanel(need(root, '#metrics'), this.api);
+    this.metrics = new MetricsPanel(
+      need(root, '#metrics'), need(root, '#alerts'),
+      need(root, '#badge-service'), this.api);
+    this.requests = new RequestsView(
+      need(root, '#requests'), need<HTMLInputElement>(root, '#req-q'),
+      need(root, '#req-count'), need(root, '#badge-requests'), this.api);
 
-    this.profiles = new ProfileTable(this.list, {
+    this.profiles = new ProfileList(this.list, {
       rotate: (p, mode) => void this.act(
         () => this.api.post(`/api/p/${p.slug}/links/rotate?mode=${mode}`),
         `Renewed the ${mode} link of “${p.name}”.`,
@@ -588,14 +892,20 @@ class Admin {
         }),
       remove: (p) => void this.act(
         () => this.api.delete(`/api/p/${p.slug}`),
-        `“${p.name}” was set aside.`,
+        `“${p.name}” was deleted — it can still be restored.`,
         {
           title: 'Delete this CV?',
-          body: 'It is set aside first and can be restored until it expires. '
+          body: 'It can be restored from the Deleted tab until it expires. '
             + 'Both private links stop working now.',
           target: `${p.name} — ${p.slug}`,
           confirm: 'Delete',
         }),
+      // The same rows as the Requests tab, filtered to this CV — rather than
+      // a second copy of the list inside every CV's details.
+      requests: (p) => {
+        this.views.select('requests');
+        this.requests.only(p.slug);
+      },
     });
 
     this.trash = new TrashList(this.trashNode, {
@@ -630,7 +940,7 @@ class Admin {
     // come to this page to see, and a form above it pushed the list off the
     // screen on every visit for the sake of the thing done least often.
     need<HTMLButtonElement>(root, '#new').addEventListener('click', () => {
-      this.views.select(0);
+      this.views.select('cvs');
       this.create.hidden = !this.create.hidden;
       if (!this.create.hidden) this.create.querySelector('input')?.focus();
     });
@@ -641,6 +951,16 @@ class Admin {
       toast.show(`“${name}” created — hand over its edit link.`);
       void this.refresh();
     }).render());
+
+    // The requests are loaded when their view is first opened, not with the
+    // page: it is the one view whose data nothing else needs, and fetching it
+    // up front puts a whole-service query on every visit to an inventory.
+    // Re-read on each opening, because the answer is the one on this page
+    // that changes without anybody here doing anything.
+    this.views.onOpen((name) => {
+      if (name === 'requests') void this.requests.refresh();
+    });
+
     void this.refresh();
     void this.refreshTrash();
     void this.metrics.refresh();

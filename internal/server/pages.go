@@ -135,9 +135,9 @@ func homePage(public []*profiles.Profile, siteKey string) string {
 	return body
 }
 
-func editorPage(base, slug, token string) string {
+func editorPage(base, slug string) string {
 	body, err := render("editor.html", map[string]any{
-		"Base": base, "Slug": slug, "Token": token,
+		"Base": base, "Slug": slug,
 	})
 	if err != nil {
 		return "<!doctype html><title>piCVert</title><p>" + template.HTMLEscapeString(err.Error())

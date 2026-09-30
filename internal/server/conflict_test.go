@@ -20,10 +20,10 @@ func TestALateSaveDoesNotDestroyAnEarlierOne(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	// Both people open the CV. Same document, same revision.
-	first := call(t, h, "GET", "/api/p/"+slug, nil, auth)
+	first := call(t, h, "GET", on(edit, "/api/cv"), nil, nil)
 	if first.Code != http.StatusOK {
 		t.Fatalf("load: %d", first.Code)
 	}
@@ -42,8 +42,8 @@ func TestALateSaveDoesNotDestroyAnEarlierOne(t *testing.T) {
 	// The first person changes the name and saves.
 	mine := clone(doc)
 	setName(mine, "First Person")
-	saved := call(t, h, "PUT", "/api/p/"+slug, mine,
-		merge(auth, map[string]string{"If-Match": revision}))
+	saved := call(t, h, "PUT", on(edit, "/api/cv"), mine,
+		map[string]string{"If-Match": revision})
 	if saved.Code != http.StatusOK {
 		t.Fatalf("the first save failed: %d %s", saved.Code, saved.Body.String())
 	}
@@ -52,8 +52,8 @@ func TestALateSaveDoesNotDestroyAnEarlierOne(t *testing.T) {
 	// it was when THEY loaded it. It must be refused.
 	theirs := clone(doc)
 	setName(theirs, "Second Person")
-	late := call(t, h, "PUT", "/api/p/"+slug, theirs,
-		merge(auth, map[string]string{"If-Match": revision}))
+	late := call(t, h, "PUT", on(edit, "/api/cv"), theirs,
+		map[string]string{"If-Match": revision})
 
 	if late.Code != http.StatusConflict {
 		t.Fatalf("a save based on a stale document answered %d, want 409 — "+
@@ -76,16 +76,16 @@ func TestASaveOnTheCurrentRevisionIsAccepted(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	first := call(t, h, "GET", "/api/p/"+slug, nil, auth)
+	first := call(t, h, "GET", on(edit, "/api/cv"), nil, nil)
 	loaded := decode(t, first)
 	doc, _ := loaded["doc"].(map[string]any)
 
 	mine := clone(doc)
 	setName(mine, "One")
-	w := call(t, h, "PUT", "/api/p/"+slug, mine,
-		merge(auth, map[string]string{"If-Match": first.Header().Get("ETag")}))
+	w := call(t, h, "PUT", on(edit, "/api/cv"), mine,
+		map[string]string{"If-Match": first.Header().Get("ETag")})
 	if w.Code != http.StatusOK {
 		t.Fatalf("a save on the current revision was refused: %d", w.Code)
 	}
@@ -100,8 +100,8 @@ func TestASaveOnTheCurrentRevisionIsAccepted(t *testing.T) {
 
 	mine2 := clone(doc)
 	setName(mine2, "Two")
-	again := call(t, h, "PUT", "/api/p/"+slug, mine2,
-		merge(auth, map[string]string{"If-Match": next}))
+	again := call(t, h, "PUT", on(edit, "/api/cv"), mine2,
+		map[string]string{"If-Match": next})
 	if again.Code != http.StatusOK {
 		t.Fatalf("the same client's second save was refused: %d", again.Code)
 	}
@@ -114,13 +114,13 @@ func TestASaveWithoutARevisionIsStillAccepted(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	doc, err := s.Store.Read(slug, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := call(t, h, "PUT", "/api/p/"+slug, doc, auth); w.Code != http.StatusOK {
+	if w := call(t, h, "PUT", on(edit, "/api/cv"), doc, nil); w.Code != http.StatusOK {
 		t.Fatalf("a save with no If-Match was refused: %d", w.Code)
 	}
 }
@@ -146,15 +146,4 @@ func nameIn(doc map[string]any) string {
 	identity, _ := content["identity"].(map[string]any)
 	name, _ := identity["name"].(string)
 	return name
-}
-
-func merge(a, b map[string]string) map[string]string {
-	out := map[string]string{}
-	for k, v := range a {
-		out[k] = v
-	}
-	for k, v := range b {
-		out[k] = v
-	}
-	return out
 }

@@ -10,10 +10,16 @@
 //
 //	BY PRIVATE LINK (two per CV, stable)
 //	  GET  /e/<token>/            the CV; an “Edit” button when the link allows
+//	  GET  /e/<token>/cv.pdf      the PDF
 //	  GET  /e/<token>/edit/       the editor
+//	  GET  /e/<token>/info        what this link is, and the read-only one
+//	       /e/<token>/api/…       reading and writing; writing needs an edit link
 //
-//	  /api/p/<slug>/…             reading and writing, reserved to the holder of
-//	                              an edit link (X-CV-Token header)
+// EVERYTHING PRIVATE HANGS OFF THE TOKEN, including the API. It used to live
+// at /api/p/<slug>/ with the token in a header, which meant a caller had to
+// know a slug the grant already named, and a slug in a path that carried no
+// authority was checked against the one that did. One prefix removes the
+// header, the check, and the lookup that had to come before either.
 //
 // There is NO account and NO password: access rests entirely on the links. On a
 // public service, a password-protected surface would be the only thing here
@@ -26,15 +32,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
+	"sync"
 	"time"
 
+	"picvert/internal/access"
 	"picvert/internal/config"
 	"picvert/internal/document"
 	"picvert/internal/engine"
@@ -70,6 +78,9 @@ type Server struct {
 	Config config.Config
 	// Metrics is what the admin page reports. Counted rather than guessed.
 	Metrics *metrics.Metrics
+	// Access is who fetched which CV, held in memory only. See the package
+	// comment for why it is not written down.
+	Access *access.Log
 	// Session signs administration logins; the key is made at startup and
 	// never written down, so a restart signs everybody out.
 	Session *Session
@@ -78,6 +89,19 @@ type Server struct {
 
 	// pages caches rendered CVs. See cache.go for what bounds it and why.
 	pages *pageCache
+
+	// routes is the link-holder's route table, built once.
+	//
+	// It used to be assembled inside the handler, so every request to the
+	// editor's surface allocated a ServeMux and registered thirty routes
+	// before serving one of them — on the save path, which runs on every
+	// change somebody makes.
+	//
+	// Once rather than in New because a test builds a Server as a struct
+	// literal, and a route table only that constructor filled in would be nil
+	// for every one of them.
+	routesOnce sync.Once
+	routes     http.Handler
 }
 
 // New assembles the service from its configuration.
@@ -107,6 +131,7 @@ func New(home string, cfg config.Config, version string) (*Server, error) {
 	return &Server{
 		Config:    cfg,
 		Metrics:   metrics.New(version),
+		Access:    access.New(),
 		Session:   &Session{Secret: config.NewSecret(), TTL: cfg.Admin.Session},
 		Challenge: turnstile.New(cfg.Turnstile.Secret),
 		Engine:    e,
@@ -307,12 +332,15 @@ func (s *Server) Handler() http.Handler {
 	// would eventually disagree with the first, and a CV would then be readable
 	// while the admin reported it as private.
 	mux.HandleFunc("GET /p/{slug}/{$}", s.publicRoute(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		s.note(r, p, access.Viewer)
 		s.sendViewer(w, r, viewerData{Base: "/p/" + p.Slug, Profile: p, Lang: lang(r)})
 	}))
 	mux.HandleFunc("GET /p/{slug}/cv.html", s.publicRoute(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		s.note(r, p, access.Page)
 		s.sendPage(w, r, p, lang(r))
 	}))
 	mux.HandleFunc("GET /p/{slug}/cv.pdf", s.publicRoute(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		s.note(r, p, access.PDF)
 		s.sendPDF(w, r, p, lang(r))
 	}))
 	mux.HandleFunc("GET /p/{slug}/photo", s.publicRoute(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
@@ -325,12 +353,14 @@ func (s *Server) Handler() http.Handler {
 	// The private surface. The throttle lives INSIDE these handlers rather than
 	// in front of them: a link is checked first, and only a bad one counts
 	// against the address. See Guard.Refuse.
-	mux.HandleFunc("GET /e/{token}/", s.shareRoute)
+	// Every method, not just GET: the editor's writes live under this prefix
+	// too, and a method filter here would answer them 405 before the token was
+	// ever looked at.
+	mux.HandleFunc("/e/{token}/", s.shareRoute)
 	mux.HandleFunc("GET /e/{token}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/e/"+r.PathValue("token")+"/", http.StatusFound)
 	})
 
-	mux.HandleFunc("/api/", s.apiRoute)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", assetHandler(s.Guard)))
 
 	// Making a CV, when a challenge is configured. See newcv.go for why that
@@ -368,6 +398,15 @@ func (s *Server) publicRoute(h func(http.ResponseWriter, *http.Request, *profile
 	}
 }
 
+// note records a fetch of a CV against the address that asked for it.
+//
+// The published surface as well as the private links: a CV named in the
+// configuration is read without any token at all, and its owner is owed the
+// same answer to "has anybody opened this".
+func (s *Server) note(r *http.Request, p *profiles.Profile, what string) {
+	s.Access.Record(p.Slug, security.ClientIP(r), what, r.UserAgent(), false)
+}
+
 // home is the root: a named CV, or the creation page.
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	if slug := s.Config.Profile; slug != "" {
@@ -390,12 +429,32 @@ func (s *Server) publicList() []*profiles.Profile {
 	return out
 }
 
-// shareRoute is everything reached through a private link.
+// shareRoute is the ONE door into everything a private link reaches.
 //
-// One handler rather than a route per path, because the token has to be
-// verified BEFORE anything else happens — including before deciding which page
-// was asked for. A route table with the check bolted onto each entry is a route
-// table with one entry that will eventually be missing it.
+// # WHY EVERY PRIVATE PATH GOES THROUGH HERE
+//
+// The token has to be verified BEFORE anything else happens — including before
+// deciding which page or route was asked for. A route table with the check
+// bolted onto each entry is a route table with one entry that will eventually
+// be missing it.
+//
+// So this verifies, resolves the profile, decides what the link is allowed to
+// do, and only then hands the rest of the path to the route table. Everything
+// past this point already knows it is talking about one profile, and cannot be
+// made to talk about another.
+//
+// # WHY THE API IS UNDER THE TOKEN AND NOT UNDER THE SLUG
+//
+// It used to live at /api/p/<slug>/…, with the token in a header, which meant
+// three different ways of saying who you were on one service: a token in a
+// path for the pages, a token in a header for the API, and a slug in a path
+// that carried no authority at all — the grant already named it, and a request
+// whose slug disagreed was refused. A client could not even begin without
+// first asking what its own slug was.
+//
+// One prefix removes all of that. The slug stops being a routing input, the
+// header disappears, and a link is a link whether a browser or a script
+// follows it.
 func (s *Server) shareRoute(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	grant, ok := s.Tokens.Verify(token)
@@ -425,42 +484,23 @@ func (s *Server) shareRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := "/e/" + token
-	rest := strings.TrimPrefix(r.URL.Path, base)
-	rest = strings.TrimPrefix(rest, "/")
-	switch {
-	case rest == "":
-		s.sendViewer(w, r, viewerData{
-			Base: base, Profile: p, Lang: lang(r),
-			CanEdit: grant.Mode == tokens.Edit,
-		})
-	case rest == "cv.html":
-		s.sendPage(w, r, p, lang(r))
-	case rest == "cv.pdf":
-		s.sendPDF(w, r, p, lang(r))
-	case rest == "photo":
-		s.sendPhoto(w, r, p)
-	case rest == "info":
-		links, _ := s.Tokens.ForProfile(p.Slug)
-		sendJSON(w, map[string]any{
-			"ok": true, "slug": p.Slug, "mode": string(grant.Mode),
-			"name": nameOf(p), "languages": p.Languages(),
-			"canEdit": grant.Mode == tokens.Edit,
-			"read":    "/e/" + links.Read + "/",
-		})
-	case rest == "edit" || rest == "edit/":
-		if grant.Mode != tokens.Edit {
-			fail(w, http.StatusForbidden, fmt.Errorf("this link is read-only"))
-			return
-		}
-		if rest == "edit" {
-			http.Redirect(w, r, base+"/edit/", http.StatusFound)
-			return
-		}
-		s.sendHTML(w, r, security.Admin, editorPage(base, p.Slug, token))
-	default:
-		fail(w, http.StatusNotFound, fmt.Errorf("unknown route"))
+	// A read link may read. Anything that changes a CV needs the other one, and
+	// it is refused HERE rather than merely hidden in the interface: a button
+	// that is not drawn is not a permission.
+	if r.Method != http.MethodGet && grant.Mode != tokens.Edit {
+		fail(w, http.StatusForbidden, fmt.Errorf("this link is read-only"))
+		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+
+	// The rest of the path is what the route table matches on, so no route
+	// below has to know the token is there at all.
+	base := "/e/" + token
+	ctx := r.Context()
+	ctx = context.WithValue(ctx, grantKey{}, grant)
+	ctx = context.WithValue(ctx, profileKey{}, p)
+	ctx = context.WithValue(ctx, baseKey{}, base)
+	http.StripPrefix(base, s.api()).ServeHTTP(w, r.WithContext(ctx))
 }
 
 func nameOf(p *profiles.Profile) string {

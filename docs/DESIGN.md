@@ -234,6 +234,32 @@ A group holds controls, a list holds groups. Not a design choice so much as the
 field tree's own shape, followed — which is what makes "no per-section code"
 true rather than aspirational.
 
+### One prefix — the private surface
+
+`shareRoute`, in `internal/server/server.go`.
+
+There were three ways of saying who you were: a token in a path for the pages,
+a token in a header for the API, and a slug in a path that carried no authority
+at all — the grant already named it, and a request whose slug disagreed was
+refused by a one-line check. A client could not make its first call without
+first asking what its own slug was.
+
+Mounting the API under `/e/<token>/` collapses all three. The slug stops being
+a routing input, the header disappears, and the check disappears with the path
+it guarded: a route no longer names a CV, so naming the wrong one is not
+something a request can express. That is the preferred kind of fix — not a
+guard against a mistake, but a grammar in which the mistake has no sentence.
+
+It also removed the one place the interface had to spell a secret in a query
+string, because a `sendBeacon` cannot set a header. The exception stopped
+existing when the credential moved into the address.
+
+**Two schemes remain, and they are two on purpose.** `/p/<slug>/` is a name:
+typeable, quotable, meant for a business card, and protected by the publication
+rule rather than by being unguessable. `/e/<token>/` is a secret: 192 bits,
+meant to be pasted once. Giving them one shape would mean either publishing
+tokens or making private links guessable.
+
 ### Facade — `Api` and `HttpClient`
 
 `editor/api.ts` over `lib/http.ts`. The server reports failure as `{ok:false}`

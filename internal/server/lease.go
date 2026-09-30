@@ -17,8 +17,8 @@ import (
 // store.WriteIfUnchanged — because a lease can lapse while somebody is mid
 // sentence, and because the command line does not take one.
 //
-//	POST   /api/p/{slug}/lease        ask to edit, or say you are still here
-//	DELETE /api/p/{slug}/lease        give it up, closing a tab
+//	POST   /api/lease        ask to edit, or say you are still here
+//	DELETE /api/lease        give it up, closing a tab
 //
 // The holder identity is minted by the server and kept by one tab. It cannot be
 // the link token: the whole situation this exists for is two people holding the
@@ -159,7 +159,7 @@ func rememberHolder(w http.ResponseWriter, r *http.Request, holder lease.Holder)
 
 // leaseRoutes are the two the editor calls.
 func (s *Server) leaseRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/p/{slug}/lease", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	mux.HandleFunc("POST /api/lease", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		key := leaseKey(p.Slug, lang(r))
 		// Minting here rather than in holderOf: asking for a lease is the one
 		// request that may create an identity.
@@ -209,11 +209,11 @@ func (s *Server) leaseRoutes(mux *http.ServeMux) {
 		sendJSON(w, answer)
 	}))
 
-	release := s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	release := s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		s.Leases.Release(leaseKey(p.Slug, lang(r)), holderOf(r))
 		sendJSON(w, map[string]any{"ok": true})
 	})
-	mux.HandleFunc("DELETE /api/p/{slug}/lease", release)
+	mux.HandleFunc("DELETE /api/lease", release)
 }
 
 // requireLease refuses a write from anybody who is not the current editor.

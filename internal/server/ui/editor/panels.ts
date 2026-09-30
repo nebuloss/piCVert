@@ -123,7 +123,7 @@ export class SharePanel implements Renderable {
       },
     });
 
-    this.api.links()
+    this.api.info()
       .then((answer) => { field.value = answer.read; })
       .catch((error: unknown) => {
         field.value = error instanceof Error ? error.message : String(error);

@@ -15,30 +15,36 @@ import { HttpClient } from '../lib/http.ts';
 import type { Tagged } from '../lib/http.ts';
 import type { LeaseState } from './lease.ts';
 import type {
-  Cv, DeleteAnswer, LanguagesAnswer, LinksAnswer, LoadAnswer,
+  Cv, DeleteAnswer, InfoAnswer, LanguagesAnswer, LoadAnswer,
   PreviewAnswer, SaveAnswer, TemplatesAnswer, HistoryAnswer,
 } from '../model/api.ts';
 
 export interface ApiOptions {
   slug: string;
-  token: string;
   base: string;
 }
 
 export class Api {
   readonly slug: string;
   readonly base: string;
-  private readonly token: string;
   private readonly http: HttpClient;
 
   /** Which tab this is; see lease.ts for why the cookie alone is not enough. */
   window = '';
 
-  constructor({ slug, token, base }: ApiOptions) {
+  /**
+   * The base IS the credential: it is `/e/<token>`, the link this editor was
+   * opened on, and every call below hangs off it.
+   *
+   * So nothing here holds a token, and no request carries one in a header or a
+   * query string. The slug is kept because the editor displays it, and for no
+   * other reason — it stopped being part of any address when the service put
+   * its API under the link instead of under the CV's name.
+   */
+  constructor({ slug, base }: ApiOptions) {
     this.slug = slug;
     this.base = base;
-    this.token = token;
-    this.http = new HttpClient(token);
+    this.http = new HttpClient();
   }
 
   /** The language is a query parameter on nearly everything, so it is built once. */
@@ -47,7 +53,7 @@ export class Api {
   }
 
   #p(suffix = '', lang = ''): string {
-    return `/api/p/${this.slug}${suffix}${this.#q(lang)}`;
+    return `${this.base}/api${suffix}${this.#q(lang)}`;
   }
 
   /**
@@ -58,7 +64,7 @@ export class Api {
    * rather than letting it overwrite whatever moved it.
    */
   load(lang: string): Promise<Tagged<LoadAnswer>> {
-    return this.http.tagged<LoadAnswer>('GET', this.#p('', lang));
+    return this.http.tagged<LoadAnswer>('GET', this.#p('/cv', lang));
   }
 
   /**
@@ -70,7 +76,7 @@ export class Api {
    * pause rather than on a letter.
    */
   save(doc: Cv, lang: string, revision: string): Promise<Tagged<SaveAnswer>> {
-    return this.http.tagged<SaveAnswer>('PUT', this.#p('', lang), doc, revision, this.window);
+    return this.http.tagged<SaveAnswer>('PUT', this.#p('/cv', lang), doc, revision, this.window);
   }
 
   /**
@@ -90,12 +96,19 @@ export class Api {
     return this.http.get<HistoryAnswer>(this.#p('/history', lang));
   }
 
-  links(): Promise<LinksAnswer> {
-    return this.http.get<LinksAnswer>(this.#p('/links'));
+  /**
+   * info is everything about this link that the page it opened did not say.
+   *
+   * One call rather than one per question: it answers the read link, the mode,
+   * the languages and the name, and a second endpoint repeating any of those
+   * would be a second endpoint that could disagree.
+   */
+  info(): Promise<InfoAnswer> {
+    return this.http.get<InfoAnswer>(`${this.base}/info`);
   }
 
   remove(): Promise<DeleteAnswer> {
-    return this.http.delete<DeleteAnswer>(this.#p());
+    return this.http.delete<DeleteAnswer>(this.#p('/cv'));
   }
 
   setTemplate(uuid: string, lang: string): Promise<SaveAnswer> {
@@ -107,7 +120,7 @@ export class Api {
   }
 
   templates(): Promise<TemplatesAnswer> {
-    return this.http.get<TemplatesAnswer>('/api/templates');
+    return this.http.get<TemplatesAnswer>(this.#p('/templates'));
   }
 
   addLanguage(lang: string, from: string): Promise<SaveAnswer> {
@@ -116,7 +129,7 @@ export class Api {
 
   removeLanguage(lang: string): Promise<LanguagesAnswer> {
     return this.http.delete<LanguagesAnswer>(
-      `/api/p/${this.slug}/languages/${encodeURIComponent(lang)}`,
+      `${this.base}/api/languages/${encodeURIComponent(lang)}`,
     );
   }
 
@@ -145,14 +158,15 @@ export class Api {
    * on it: the lease lapses by itself in under a minute. It is the difference
    * between the next person waiting a moment and waiting the timeout.
    *
-   * Same-origin, so it carries the identity cookie by itself. The token goes
-   * in the query string because a beacon cannot set a header, and this is the
-   * one request that has no alternative.
+   * Same-origin, so it carries the identity cookie by itself — and the link
+   * is in the path, so a beacon's inability to set a header costs nothing.
+   * This used to be the one request that had to spell its token in a query
+   * string, which is the sort of exception that stops existing when the
+   * credential moves into the address.
    */
   releaseLease(lang: string): void {
     const path = this.#p('/lease', lang) + (lang ? '&' : '?') +
-      `token=${encodeURIComponent(this.token)}&release=1` +
-      `&window=${encodeURIComponent(this.window)}`;
+      `release=1&window=${encodeURIComponent(this.window)}`;
     navigator.sendBeacon(path);
   }
 

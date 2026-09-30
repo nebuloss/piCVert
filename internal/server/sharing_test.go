@@ -22,18 +22,18 @@ func TestAnOpenEditorDoesNotSeeAnotherPersonsChanges(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	// Both load. This is the whole of what each one knows.
-	second := decode(t, call(t, h, "GET", "/api/p/"+slug, nil, auth))
+	second := decode(t, call(t, h, "GET", on(edit, "/api/cv"), nil, nil))
 	theirDoc, _ := second["doc"].(map[string]any)
 
 	// The first person saves a change.
-	first := call(t, h, "GET", "/api/p/"+slug, nil, auth)
+	first := call(t, h, "GET", on(edit, "/api/cv"), nil, nil)
 	mine, _ := decode(t, first)["doc"].(map[string]any)
 	setName(mine, "Changed By The First")
-	if w := call(t, h, "PUT", "/api/p/"+slug, mine,
-		merge(auth, map[string]string{"If-Match": first.Header().Get("ETag")})); w.Code != http.StatusOK {
+	if w := call(t, h, "PUT", on(edit, "/api/cv"), mine,
+		map[string]string{"If-Match": first.Header().Get("ETag")}); w.Code != http.StatusOK {
 		t.Fatalf("the first save failed: %d", w.Code)
 	}
 
@@ -60,12 +60,12 @@ func TestThereIsNoLock(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	// Opening a CV takes nothing and announces nothing: a second reader is
 	// served exactly as the first was.
-	a := call(t, h, "GET", "/api/p/"+slug, nil, auth)
-	b := call(t, h, "GET", "/api/p/"+slug, nil, auth)
+	a := call(t, h, "GET", on(edit, "/api/cv"), nil, nil)
+	b := call(t, h, "GET", on(edit, "/api/cv"), nil, nil)
 	if a.Code != http.StatusOK || b.Code != http.StatusOK {
 		t.Fatalf("two readers: %d, %d", a.Code, b.Code)
 	}
@@ -90,17 +90,17 @@ func TestEditsToDifferentFieldsStillConflict(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
-	loaded := call(t, h, "GET", "/api/p/"+slug, nil, auth)
+	loaded := call(t, h, "GET", on(edit, "/api/cv"), nil, nil)
 	revision := loaded.Header().Get("ETag")
 	doc, _ := decode(t, loaded)["doc"].(map[string]any)
 
 	// One person changes the name.
 	mine := clone(doc)
 	setName(mine, "Someone")
-	if w := call(t, h, "PUT", "/api/p/"+slug, mine,
-		merge(auth, map[string]string{"If-Match": revision})); w.Code != http.StatusOK {
+	if w := call(t, h, "PUT", on(edit, "/api/cv"), mine,
+		map[string]string{"If-Match": revision}); w.Code != http.StatusOK {
 		t.Fatalf("first save: %d", w.Code)
 	}
 
@@ -110,8 +110,8 @@ func TestEditsToDifferentFieldsStillConflict(t *testing.T) {
 	identity, _ := content["identity"].(map[string]any)
 	identity["role"] = "A Different Job Title"
 
-	w := call(t, h, "PUT", "/api/p/"+slug, theirs,
-		merge(auth, map[string]string{"If-Match": revision}))
+	w := call(t, h, "PUT", on(edit, "/api/cv"), theirs,
+		map[string]string{"If-Match": revision})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("an edit to an untouched field answered %d; if this is no "+
 			"longer 409 then the merge this test documents has been built",
@@ -158,8 +158,7 @@ func TestRestoringBringsBackTheOriginalLinks(t *testing.T) {
 
 	// And the link genuinely opens it, rather than merely matching a string.
 	h := s.Handler()
-	w := call(t, h, "GET", "/api/p/"+slug, nil,
-		map[string]string{"X-CV-Token": before.Edit})
+	w := call(t, h, "GET", on(before.Edit, "/api/cv"), nil, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("the restored link answered %d", w.Code)
 	}
@@ -183,8 +182,7 @@ func TestALinkToASetAsideCVOpensNothing(t *testing.T) {
 	}
 
 	h := s.Handler()
-	w := call(t, h, "GET", "/api/p/"+slug, nil,
-		map[string]string{"X-CV-Token": links.Edit})
+	w := call(t, h, "GET", on(links.Edit, "/api/cv"), nil, nil)
 	if w.Code == http.StatusOK {
 		t.Fatal("a link to a deleted CV still opened it")
 	}

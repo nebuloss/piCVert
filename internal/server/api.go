@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"picvert/internal/access"
 	"picvert/internal/document"
 	"picvert/internal/engine"
 	"picvert/internal/fields"
@@ -38,48 +38,118 @@ func grantOf(r *http.Request) tokens.Grant {
 // is the only thing here with any size, and it has its own limit.
 const maxBody = 8 << 20
 
-// apiRoute checks the link, then hands over.
+// profileKey carries the CV a verified link names, on the request.
 //
-// The check happens ONCE, here, for everything under /api. A per-route check is
-// a check that will eventually be missing from a route.
-func (s *Server) apiRoute(w http.ResponseWriter, r *http.Request) {
-	token := r.Header.Get("X-CV-Token")
-	if token == "" {
-		token = r.URL.Query().Get("token")
-	}
-	grant, ok := s.Tokens.Verify(token)
-	if !ok {
-		s.Guard.RecordFailure(security.ClientIP(r))
-		if s.Guard.Refuse(w, r) {
-			return
-		}
-		fail(w, http.StatusUnauthorized, fmt.Errorf("invalid or expired link"))
-		return
-	}
-	s.Guard.RecordSuccess(security.ClientIP(r))
+// Resolved ONCE, at the door, for the same reason the grant is: a handler that
+// looked a profile up itself would be a handler that could look a different
+// one up.
+type profileKey struct{}
 
-	// A read link may read. Anything that changes a CV needs the other one, and
-	// it is refused HERE rather than merely hidden in the interface: a button
-	// that is not drawn is not a permission.
-	if r.Method != http.MethodGet && grant.Mode != tokens.Edit {
-		fail(w, http.StatusForbidden, fmt.Errorf("this link is read-only"))
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
-	s.api().ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), grantKey{}, grant)))
+func profileOf(r *http.Request) *profiles.Profile {
+	p, _ := r.Context().Value(profileKey{}).(*profiles.Profile)
+	return p
 }
 
-// api is the route table of the editor's surface.
+// baseKey carries the link's own prefix, /e/<token>.
+//
+// The route table is mounted with that prefix stripped, so a handler cannot
+// see it on the path any more — and the pages it serves have to spell their
+// own address: a viewer links to its PDF, an editor to its viewer. Kept here
+// rather than reconstructed from the grant, which does not hold the token and
+// must not start to.
+type baseKey struct{}
+
+func linkBase(r *http.Request) string {
+	base, _ := r.Context().Value(baseKey{}).(string)
+	return base
+}
+
+// noteLink records a fetch made through a private link.
+//
+// The editing flag comes from the grant rather than from the caller: whether
+// this was the author or a recruiter is the whole point of the record, and a
+// call site that had to pass it is a call site that can pass the wrong one.
+func (s *Server) noteLink(r *http.Request, p *profiles.Profile, what string) {
+	s.Access.Record(p.Slug, security.ClientIP(r), what, r.UserAgent(),
+		grantOf(r).Mode == tokens.Edit)
+}
+
+// api is the route table a private link reaches, built on first use.
+//
+// Every path here is relative to /e/<token>, which shareRoute has already
+// verified and stripped. There is no slug in any of them: the token named it,
+// and a path that could name another is a path somebody will.
 func (s *Server) api() http.Handler {
+	s.routesOnce.Do(func() { s.routes = s.buildAPI() })
+	return s.routes
+}
+
+func (s *Server) buildAPI() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /api/whoami", func(w http.ResponseWriter, r *http.Request) {
-		grant := grantOf(r)
-		sendJSON(w, map[string]any{
-			"ok": true, "slug": grant.Slug, "mode": string(grant.Mode),
-			"canEdit": grant.Mode == tokens.Edit,
+	// --- the pages a link opens ---------------------------------------------
+	//
+	// Only the fetches that mean somebody LOOKED are recorded. The photo and
+	// the info call are parts of a page already counted, and counting them
+	// would treat one visit as three. See internal/access.
+
+	mux.HandleFunc("GET /{$}", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		s.noteLink(r, p, access.Viewer)
+		s.sendViewer(w, r, viewerData{
+			Base: linkBase(r), Profile: p, Lang: lang(r),
+			CanEdit: grantOf(r).Mode == tokens.Edit,
 		})
+	}))
+
+	mux.HandleFunc("GET /cv.html", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		s.noteLink(r, p, access.Page)
+		s.sendPage(w, r, p, lang(r))
+	}))
+
+	mux.HandleFunc("GET /cv.pdf", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		s.noteLink(r, p, access.PDF)
+		s.sendPDF(w, r, p, lang(r))
+	}))
+
+	mux.HandleFunc("GET /photo", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		s.sendPhoto(w, r, p)
+	}))
+
+	mux.HandleFunc("GET /edit/{$}", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		// The read-only refusal at the door covers writes, not this: opening
+		// the editor is a GET. A read link is turned away here instead.
+		if grantOf(r).Mode != tokens.Edit {
+			fail(w, http.StatusForbidden, fmt.Errorf("this link is read-only"))
+			return
+		}
+		s.noteLink(r, p, access.Editor)
+		s.sendHTML(w, r, security.Admin, editorPage(linkBase(r), p.Slug))
+	}))
+
+	mux.HandleFunc("GET /edit", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, linkBase(r)+"/edit/", http.StatusFound)
 	})
+
+	// --- what a client needs before it can do anything else -----------------
+
+	// info is the discovery call: everything a client must know that it cannot
+	// work out from the link it was given.
+	//
+	// Only the READ link is ever handed back. The edit token is what the caller
+	// already holds, and echoing it would put it into every log and cache
+	// between here and the browser a second time for nothing.
+	mux.HandleFunc("GET /info", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+		grant := grantOf(r)
+		links, _ := s.Tokens.ForProfile(p.Slug)
+		sendJSON(w, map[string]any{
+			"ok": true, "slug": p.Slug, "mode": string(grant.Mode),
+			"name": nameOf(p), "languages": p.Languages(),
+			"canEdit": grant.Mode == tokens.Edit,
+			"read":    absolute(r, "/e/"+links.Read+"/"),
+		})
+	}))
+
+	// --- the editor's surface -----------------------------------------------
 
 	mux.HandleFunc("GET /api/templates", func(w http.ResponseWriter, r *http.Request) {
 		all, err := s.Registry.All()
@@ -94,7 +164,7 @@ func (s *Server) api() http.Handler {
 		sendJSON(w, map[string]any{"ok": true, "templates": out})
 	})
 
-	mux.HandleFunc("GET /api/p/{slug}", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	mux.HandleFunc("GET /api/cv", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		doc, err := s.Store.Read(p.Slug, lang(r))
 		if err != nil {
 			fail(w, http.StatusNotFound, err)
@@ -117,26 +187,26 @@ func (s *Server) api() http.Handler {
 		})
 	}))
 
-	mux.HandleFunc("PUT /api/p/{slug}", s.write(func(r *http.Request, p *profiles.Profile, body any) (document.Doc, error) {
+	mux.HandleFunc("PUT /api/cv", s.write(func(r *http.Request, p *profiles.Profile, body any) (document.Doc, error) {
 		// If-Match is how a client says which version it believes it is
 		// editing. Absent, the write goes through — the command line and
 		// anyone with curl have no revision to send.
 		return s.Store.WriteIfUnchanged(p.Slug, body, lang(r), ifMatch(r))
 	}))
 
-	mux.HandleFunc("PATCH /api/p/{slug}/identity", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
+	mux.HandleFunc("PATCH /api/identity", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
 		return s.Store.UpdateIdentity(p.Slug, patch, lang(r))
 	}))
 
-	mux.HandleFunc("PATCH /api/p/{slug}/meta", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
+	mux.HandleFunc("PATCH /api/meta", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
 		return s.Store.UpdateMeta(p.Slug, patch, lang(r))
 	}))
 
-	mux.HandleFunc("PUT /api/p/{slug}/template", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
+	mux.HandleFunc("PUT /api/template", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
 		return s.Store.SetTemplate(p.Slug, document.Str(patch, "template"), lang(r))
 	}))
 
-	mux.HandleFunc("PUT /api/p/{slug}/sections/order", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
+	mux.HandleFunc("PUT /api/sections/order", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
 		order, err := intList(patch, "order")
 		if err != nil {
 			return nil, err
@@ -144,7 +214,7 @@ func (s *Server) api() http.Handler {
 		return s.Store.ReorderSections(p.Slug, order, lang(r))
 	}))
 
-	mux.HandleFunc("PUT /api/p/{slug}/sections/{id}/order", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
+	mux.HandleFunc("PUT /api/sections/{id}/order", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
 		order, err := intList(patch, "order")
 		if err != nil {
 			return nil, err
@@ -152,15 +222,15 @@ func (s *Server) api() http.Handler {
 		return s.Store.ReorderEntries(p.Slug, r.PathValue("id"), order, lang(r))
 	}))
 
-	mux.HandleFunc("PUT /api/p/{slug}/sections/{id}", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
+	mux.HandleFunc("PUT /api/sections/{id}", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
 		return s.Store.UpdateSection(p.Slug, r.PathValue("id"), patch, lang(r))
 	}))
 
-	mux.HandleFunc("GET /api/p/{slug}/fit", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	mux.HandleFunc("GET /api/fit", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		sendJSON(w, map[string]any{"ok": true, "fit": s.fitOf(p, lang(r))})
 	}))
 
-	mux.HandleFunc("GET /api/p/{slug}/history", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	mux.HandleFunc("GET /api/history", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		_, filter := r.URL.Query()["lang"]
 		sendJSON(w, map[string]any{
 			"ok": true, "entries": s.History.List(p, 200, lang(r), filter)})
@@ -169,7 +239,7 @@ func (s *Server) api() http.Handler {
 	// The live preview: a document that has NOT been saved, laid out as it
 	// would be. This is the hot path — it runs on every pause in typing — and it
 	// is the reason the layout is one pass rather than two.
-	mux.HandleFunc("POST /api/p/{slug}/preview", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	mux.HandleFunc("POST /api/preview", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		var body any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			fail(w, http.StatusBadRequest, err)
@@ -193,15 +263,15 @@ func (s *Server) api() http.Handler {
 		sendJSON(w, map[string]any{"ok": true, "html": html, "fit": fitOf(page)})
 	}))
 
-	mux.HandleFunc("GET /api/p/{slug}/languages", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	mux.HandleFunc("GET /api/languages", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		sendJSON(w, map[string]any{"ok": true, "languages": p.Languages()})
 	}))
 
-	mux.HandleFunc("POST /api/p/{slug}/languages", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
+	mux.HandleFunc("POST /api/languages", s.patch(func(r *http.Request, p *profiles.Profile, patch map[string]any) (document.Doc, error) {
 		return s.Store.AddLanguage(p.Slug, document.Str(patch, "lang"), document.Str(patch, "from"))
 	}))
 
-	mux.HandleFunc("DELETE /api/p/{slug}/languages/{lang}", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	mux.HandleFunc("DELETE /api/languages/{lang}", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		if err := s.Store.RemoveLanguage(p.Slug, r.PathValue("lang")); err != nil {
 			fail(w, http.StatusBadRequest, err)
 			return
@@ -210,30 +280,17 @@ func (s *Server) api() http.Handler {
 		sendJSON(w, map[string]any{"ok": true, "languages": p.Languages()})
 	}))
 
-	mux.HandleFunc("GET /api/p/{slug}/photo", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
-		s.sendPhoto(w, r, p)
-	}))
-
-	mux.HandleFunc("POST /api/p/{slug}/photo", s.owned(s.requireLease(s.uploadPhoto)))
+	// Uploading only. Reading the portrait is GET /photo above — it was served
+	// from two addresses, one for the page and one for the editor, doing the
+	// same thing for the same caller.
+	mux.HandleFunc("POST /api/photo", s.onCV(s.requireLease(s.uploadPhoto)))
 
 	// Asking for, keeping and giving up the right to edit.
 	s.leaseRoutes(mux)
 
-	mux.HandleFunc("GET /api/p/{slug}/links", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
-		links, err := s.Tokens.ForProfile(p.Slug)
-		if err != nil {
-			fail(w, http.StatusInternalServerError, err)
-			return
-		}
-		// Only the read link is ever handed back through an edit link. The edit
-		// token is what the caller already holds, and echoing it would put it
-		// into every log and cache between here and the browser a second time
-		// for nothing.
-		sendJSON(w, map[string]any{
-			"ok":   true,
-			"read": absolute(r, "/e/"+links.Read+"/"),
-		})
-	}))
+	// There is no separate "my links" call. GET /info answers it, along with
+	// everything else a client cannot work out from the link it holds, and two
+	// endpoints returning the same read link is one of them getting it wrong.
 
 	// Deleting your own CV, from your own CV.
 	//
@@ -244,7 +301,7 @@ func (s *Server) api() http.Handler {
 	//
 	// It is set aside rather than destroyed — see Server.Trash — because this
 	// is one click and what it removes exists nowhere else.
-	mux.HandleFunc("DELETE /api/p/{slug}", s.owned(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	mux.HandleFunc("DELETE /api/cv", s.onCV(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		if err := s.Trash(p); err != nil {
 			fail(w, http.StatusInternalServerError, err)
 			return
@@ -258,21 +315,26 @@ func (s *Server) api() http.Handler {
 	return mux
 }
 
-// owned refuses a slug the link does not cover.
+// onCV hands a handler the CV the link names.
 //
-// A token is good for ITS profile and no other. Without this, holding a link to
-// any CV would be holding a link to every CV — the check is one line and its
-// absence would be the whole security model.
-func (s *Server) owned(h func(http.ResponseWriter, *http.Request, *profiles.Profile)) http.HandlerFunc {
+// # WHY THERE IS NOTHING TO CHECK HERE
+//
+// This used to compare the slug in the path against the slug in the grant and
+// refuse the mismatch — a one-line check whose absence would have meant that
+// holding a link to any CV was holding a link to every CV.
+//
+// The check is gone because the path it guarded is gone. A route no longer
+// names a CV: the token does, shareRoute resolved it once, and there is no
+// second opinion for this to referee. A class of mistake was not fixed, it was
+// made unspellable.
+func (s *Server) onCV(h func(http.ResponseWriter, *http.Request, *profiles.Profile)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		slug := r.PathValue("slug")
-		if grantOf(r).Slug != slug {
-			fail(w, http.StatusForbidden, fmt.Errorf("this link does not cover %q", slug))
-			return
-		}
-		p, err := s.Profiles.Get(slug)
-		if err != nil {
-			fail(w, http.StatusNotFound, err)
+		p := profileOf(r)
+		if p == nil {
+			// Unreachable through shareRoute, which resolves the profile
+			// before it routes. Reached only by a handler mounted somewhere
+			// else, and saying so beats a nil dereference.
+			fail(w, http.StatusInternalServerError, fmt.Errorf("no CV on this request"))
 			return
 		}
 		h(w, r, p)
@@ -284,7 +346,7 @@ func (s *Server) write(apply func(*http.Request, *profiles.Profile, any) (docume
 	// requireLease wraps every mutating route, here rather than per route: a
 	// check written out seven times is a check that will be missing from the
 	// eighth.
-	return s.owned(s.requireLease(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	return s.onCV(s.requireLease(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		var body any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			fail(w, http.StatusBadRequest, err)
@@ -336,7 +398,7 @@ func statusFor(err error) int {
 
 // patch is a handler taking a partial change.
 func (s *Server) patch(apply func(*http.Request, *profiles.Profile, map[string]any) (document.Doc, error)) http.HandlerFunc {
-	return s.owned(s.requireLease(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
+	return s.onCV(s.requireLease(func(w http.ResponseWriter, r *http.Request, p *profiles.Profile) {
 		patch := map[string]any{}
 		if err := json.NewDecoder(r.Body).Decode(&patch); err != nil && err != io.EOF {
 			fail(w, http.StatusBadRequest, err)

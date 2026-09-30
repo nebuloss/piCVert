@@ -175,11 +175,19 @@ form.create .help.created {
 }
 form.create .help.created strong { display: block; margin-bottom: 6px; }
 
-/* --- the two views ------------------------------------------------------- */
+/* --- what to act on ------------------------------------------------------ */
 
-/* Tabs, not stacked sections. The CVs and the trash are not looked at in the
-   same motion, and stacking them padded the inventory with what nobody was
-   looking for. */
+/* ABOVE the tabs, in every view. A warning filed inside the Service tab is a
+   warning nobody sees, because nobody opens a tab to find out whether there is
+   something wrong — they open it having already been told. */
+#alerts:not(:empty) { margin-bottom: 16px; }
+
+/* --- the three views ----------------------------------------------------- */
+
+/* Tabs, not stacked sections. The inventory, the trash and the numbers are
+   not looked at in the same motion, and stacking them padded the one people
+   came for with the two they did not — the figures alone pushed the first CV
+   a third of the way down the page on every visit. */
 .views {
   display: flex; gap: 4px; margin-bottom: 18px;
   border-bottom: 1px solid var(--line);
@@ -201,6 +209,10 @@ form.create .help.created strong { display: block; margin-bottom: 6px; }
   background: var(--sunk); color: var(--dim); border: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
 }
+/* The Service tab counts WARNINGS, not figures. A badge of "8" there would
+   read as eight problems where it means eight numbers, so it says "ok" when
+   there is nothing to do and the count when there is. */
+#badge-service { font-weight: 650; }
 .view-tab[aria-selected="true"] .badge {
   background: var(--accent-soft); color: var(--accent); border-color: transparent;
 }
@@ -217,9 +229,11 @@ form.create .help.created strong { display: block; margin-bottom: 6px; }
   border-color: var(--accent-line); font-weight: 700;
 }
 
-#view-trash > .lede { margin: 0 0 16px; color: var(--dim); font-size: 13px; }
+#view-deleted > .lede, #view-service > .lede, #view-requests > .lede {
+  margin: 0 0 16px; color: var(--dim); font-size: 13px;
+}
 
-/* --- what is set aside --------------------------------------------------- */
+/* --- what has been deleted ----------------------------------------------- */
 
 /* Cards rather than a row in a table. A deleted CV is not an inventory entry
    to scan past — it is a thing with a deadline, and the deadline has to be
@@ -256,57 +270,145 @@ form.create .help.created strong { display: block; margin-bottom: 6px; }
 }
 .bar #new { flex: 0 0 auto; margin-left: 4px; }
 
-/* --- tables -------------------------------------------------------------- */
+/* --- the inventory ------------------------------------------------------- */
 
-/* The rounding is on a wrapper rather than on the table. `overflow: hidden` on
-   a table element is honoured by some browsers and quietly dropped by others,
-   so the corners were square on exactly one machine. */
-.tablewrap {
+/* ONE LINE PER CV.
+ *
+ * This was a seven-column table and a CV took about 110 px of it: two link
+ * rows of five controls each, a stack of tags, a size, a date and four
+ * buttons. Ten CVs did not fit on a screen — on a page whose whole purpose is
+ * to show what is there.
+ *
+ * The line is a flex row that never wraps, so a CV is exactly one line
+ * whatever it holds, and the name is the part that gives way when the window
+ * is narrow. Everything the old columns carried is still here, one click
+ * inside the disclosure.
+ */
+.cvs {
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
+  box-shadow: var(--shadow);
 }
-table { width: 100%; border-collapse: collapse; background: var(--card); table-layout: fixed; }
-th, td {
-  text-align: left; padding: 11px 14px;
-  border-top: 1px solid var(--line); vertical-align: top;
-}
-th {
-  background: var(--sunk); border-top: 0;
-  font-size: 11px; font-weight: 650; color: var(--dim);
-  text-transform: uppercase; letter-spacing: .05em;
-  white-space: nowrap;
-}
-tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.cv-entry + .cv-entry { border-top: 1px solid var(--line); }
 
-/* Widths are stated rather than left to the browser. Left to itself it gives
-   the room to the column holding the longest unbroken run of characters — the
-   links — and then breaks "Jean Dupont" across two lines to pay for it. */
-td .name { font-weight: 550; }
-td code { font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-td.who { white-space: nowrap; overflow: hidden; }
-td.who .name, td.who code {
-  display: block; overflow: hidden; text-overflow: ellipsis;
+.cv {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px 6px 6px;
+  min-width: 0;
 }
-/* Wraps rather than overflows. A CV in four languages carries four tags, and
-   in a fixed layout an unwrappable cell does not widen its column — it spills
-   over the one beside it. */
-td.access { line-height: 1.9; }
-td.access .tag { margin-right: 2px; }
-td.links { overflow: hidden; }
-/* Both are numbers read down the column rather than across the row, so they
-   wrap rather than run into their neighbour when the window is narrow. */
-td.size, td.when { font-size: 12.5px; color: var(--dim); }
-td.when { white-space: nowrap; }
-td.actions { white-space: nowrap; text-align: right; vertical-align: middle; }
-td.actions > * { margin-left: 5px; }
-/* Smaller than the buttons elsewhere: four controls have to sit on one line in
-   a column whose width is fixed, and a cell that overflows in a fixed layout is
-   a cell whose last button is invisible rather than wrapped. */
-td.actions button { padding: 5px 11px; font-size: 13px; }
-/* The three links wrap as a group before the delete button does: losing sight
-   of "delete" is worse than a second line. */
-td.actions { line-height: 2.1; }
+.cv:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.cv.open { background: var(--sunk); }
+.cv .gap { flex: 1 1 auto; }
+
+/* The disclosure is the whole affordance: a chevron that turns. */
+.cv-open {
+  flex: 0 0 auto; border: 0; background: none; padding: 4px 6px;
+  color: var(--faint); line-height: 1; border-radius: var(--radius-sm);
+}
+.cv-open .chevron {
+  display: block; font-size: 17px;
+  transition: transform .12s;
+}
+.cv-open[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+.cv-open:hover { color: var(--accent); background: var(--card); }
+
+/* The name gives way first, and gives way by being clipped rather than by
+   wrapping: a line that can become two lines is not a one-line list. */
+.cv-name {
+  font-weight: 550; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cv-slug {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; color: var(--faint); flex: 0 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* How often this CV has been fetched, on the line: a CV nobody has opened and
+   one fetched forty times were otherwise the same row. */
+.cv-visits {
+  font-size: 11px; color: var(--dim); white-space: nowrap;
+  font-variant-numeric: tabular-nums; flex: 0 0 auto;
+}
+.cv-when {
+  font-size: 12px; color: var(--dim); white-space: nowrap;
+  font-variant-numeric: tabular-nums; flex: 0 0 auto;
+}
+.cv .tag, .cv button { flex: 0 0 auto; }
+/* A button that says what it does rather than a glyph that has to be learnt.
+   It is the one action on this line that is not a link to look at. */
+.cv button.copy { font: inherit; font-size: 11px; line-height: 1.7; }
+.cv button.copy:hover { border-color: var(--accent); color: var(--accent); }
+
+/* --- what a CV is, when asked -------------------------------------------- */
+
+.cv-details {
+  padding: 4px 14px 14px 30px;
+  background: var(--sunk);
+  border-top: 1px dashed var(--line);
+}
+.cv-role { font-weight: 550; font-size: 13px; }
+.cv-facts { font-size: 12px; color: var(--dim); margin: 2px 0 8px; }
+/* --- who has fetched it -------------------------------------------------- */
+
+/* One row per ADDRESS, not per request. A stream of forty lines is forty
+   things to add up by eye; the question is how many people, which is the
+   grouping itself. */
+/* The CVs an address touched. Two named and the rest counted: the useful
+   signal is "this address has opened nine different CVs", which a number says
+   and a list of nine slugs buries. */
+.access-cvs {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 220px; flex: 0 1 auto;
+}
+.access-more {
+  font-size: 10.5px; color: var(--accent); font-weight: 650; flex: 0 0 auto;
+}
+.cv-seen { margin-top: 10px; }
+.cv-seen button { font: inherit; font-size: 11px; line-height: 1.7; }
+.cv-seen button:hover { border-color: var(--accent); color: var(--accent); }
+
+.access-rows {
+  margin-top: 5px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--card); overflow: hidden;
+}
+.access-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; font-size: 12px;
+}
+.access-row + .access-row { border-top: 1px solid var(--line); }
+/* The owner's own visits. Marked rather than hidden: an author wants to know
+   their link works, and an afternoon of editing must not read as an audience. */
+.access-row.author { background: var(--sunk); color: var(--dim); }
+.access-ip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; flex: 0 0 auto;
+}
+.access-what { color: var(--dim); }
+.access-agent { color: var(--faint); font-size: 11px; }
+.access-last {
+  color: var(--dim); font-size: 11.5px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.access-row .gap { flex: 1 1 auto; }
+.access-wait { font-size: 12px; color: var(--dim); padding: 5px 0; }
+#view-requests .bar { margin-bottom: 12px; }
+#view-requests .bar input[type="search"] { min-width: 280px; }
+/* What the panel does NOT know, stated whether or not the list is empty: an
+   empty list otherwise reads as "nobody came" when it may mean "this process
+   started an hour ago". */
+.access-scope { font-size: 11px; color: var(--faint); margin-top: 5px; }
+
+.cv-danger { margin-top: 10px; }
+.cv-danger button.danger {
+  font-size: 12.5px; padding: 5px 13px;
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  color: var(--warn);
+}
 
 /* One line, clipped, with the full value on hover and in the clipboard.
 
@@ -345,14 +447,6 @@ button.link-renew { opacity: 0; transition: opacity .12s; }
 .linkrow:hover button.link-renew,
 .linkrow:focus-within button.link-renew { opacity: 1; }
 button.link-renew:hover { border-color: var(--warn); color: var(--warn); }
-
-/* What the CV is, rather than how big its folder is. */
-td.what { font-size: 12.5px; }
-td.what .role {
-  font-weight: 550; color: var(--ink);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-td.what .muted { display: block; margin-top: 2px; }
 
 /* --- tags ---------------------------------------------------------------- */
 
@@ -395,7 +489,6 @@ a.tag:hover { border-color: var(--accent); color: var(--accent); }
   background: var(--card);
   border: 1px solid var(--line); border-radius: var(--radius);
   overflow: hidden; box-shadow: var(--shadow);
-  margin-bottom: 20px;
 }
 .stat {
   padding: 13px 15px;
@@ -426,20 +519,20 @@ a.tag:hover { border-color: var(--accent); color: var(--accent); }
 }
 .warning::before { content: "!"; font-weight: 700; color: var(--accent); }
 
-/* --- narrow screens ------------------------------------------------------ */
-
 /* --- narrow screens ------------------------------------------------------
  *
- * The table STOPS BEING A TABLE.
+ * There is no second layout any more.
  *
- * Seven columns of fixed percentage widths at 375 px gives each about fifty
- * pixels: names were clipped to "J…", the headers ran into each other, and
- * the row's buttons — including `delete` — sat 157 px past the right edge,
- * invisible and unreachable. Measured, not guessed.
+ * The inventory used to be a table of seven fixed-percentage columns, which at
+ * 375 px gave each about fifty pixels: names clipped to "J…", headers running
+ * into one another, and the row's buttons — `delete` among them — 157 px past
+ * the right edge, invisible and unreachable. The answer then was to turn every
+ * row into a labelled card, which is a hundred lines of rules describing a
+ * second design.
  *
- * Squeezing further was not the answer. A row becomes a card, each value
- * labelled with the column it came from, and the things one does to a CV
- * become a row of buttons big enough for a thumb.
+ * A line that is already one line does not need them. What is left below is
+ * what a phone genuinely needs: room for a thumb, and the things that do not
+ * fit dropped in an order chosen here rather than by the browser.
  */
 @media (max-width: 860px) {
   main { padding: 16px 12px 48px; }
@@ -449,68 +542,19 @@ a.tag:hover { border-color: var(--accent); color: var(--accent); }
   .bar input[type="search"] { order: -1; width: 100%; min-width: 0; }
   .bar #new { margin-left: auto; }
 
-  /* The header row is what the cards' own labels replace. */
-  .tablewrap { border: 0; border-radius: 0; overflow: visible; }
-  table, thead, tbody, tr, td { display: block; }
-  colgroup { display: none; }
-  /* Not merely clipped. A visually-hidden <thead> still LAYS OUT: its cells
-     kept their widths, reported as sticking 100 px past the viewport, and on
-     a browser that ignores clip-path they would be visible gibberish above
-     the cards. The labels survive as each cell's ::before, so nothing is lost
-     by removing the row entirely. */
-  thead { display: none; }
+  /* The identifier goes before the name does: a slug is recoverable from the
+     details, and a nameless line is not scannable at all. */
+  .cv-slug { display: none; }
+  .cv { padding: 4px 8px 4px 2px; gap: 6px; }
+  .cv .tag, .cv button.copy { padding: 6px 12px; font-size: 12px; }
+  .cv-open { padding: 8px 8px; }
+  .cv-details { padding-left: 14px; }
 
-  tbody tr {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: var(--radius); box-shadow: var(--shadow);
-    padding: 14px 16px; margin-bottom: 12px;
-  }
-  tbody tr:hover { background: var(--card); }
-
-  td { border: 0; padding: 0; }
-  /* The label the cell carried through from its column. */
-  td[data-label]:not(:empty)::before {
-    content: attr(data-label);
-    display: block; margin-bottom: 2px;
-    font-size: 10px; font-weight: 650; text-transform: uppercase;
-    letter-spacing: .05em; color: var(--faint);
-  }
-  td:not(:empty) { margin-bottom: 12px; }
-  td:empty { display: none; }
-
-  /* The name leads, and needs no label saying "CV" above it. */
-  td.who::before { display: none; }
-  td.who { white-space: normal; }
-  td.who .name { font-size: 16px; overflow: visible; white-space: normal; }
-  td.who code { overflow: visible; white-space: normal; }
-
-  td.what .role { white-space: normal; }
-  td.links { width: auto; overflow: visible; }
-  .linkrow { flex-wrap: wrap; }
-  .linkrow code { flex: 1 1 100%; order: 3; }
   /* No hover on a touch screen, so a control that appears on hover is a
      control that does not exist. */
   button.link-renew { opacity: 1; }
-
-  /* Big enough for a thumb, and on one line that wraps rather than one that
-     runs off the edge. */
-  td.actions {
-    text-align: left; white-space: normal;
-    display: flex; flex-wrap: wrap; gap: 8px;
-    padding-top: 4px; border-top: 1px solid var(--line); margin-bottom: 0;
-  }
-  td.actions::before { flex: 1 1 100%; }
-  td.actions > * { margin-left: 0; }
-  td.actions::before { display: none; }
-  td.actions button, td.actions .tag {
-    padding: 9px 16px; font-size: 13px; line-height: 1.4; text-align: center;
-  }
-  /* Destructive, and it must not look like the three beside it. On the wide
-     layout hovering says so; a thumb cannot hover. */
-  td.actions button.danger {
-    border-color: color-mix(in srgb, var(--warn) 45%, transparent);
-    color: var(--warn);
-  }
+  .linkrow { flex-wrap: wrap; }
+  .linkrow code { flex: 1 1 100%; order: 3; }
 
   /* Two across rather than seven; below that the numbers are wider than the
      column they sit in. */
@@ -527,5 +571,9 @@ a.tag:hover { border-color: var(--accent); color: var(--accent); }
   /* The publication policy is a detail; the warning above is not, and on a
      375 px bar they competed for the same line. */
   .topbar #policy { display: none; }
-  td.actions button, td.actions .tag { flex: 1 1 calc(50% - 4px); text-align: center; }
+  /* The date is the first thing to go: what a phone is used for here is
+     finding a CV and taking its link, and "3 d" is the least of that. */
+  .cv-when { display: none; }
+  .cv button.copy { font-size: 0; }
+  .cv button.copy::after { content: "copy link"; font-size: 12px; }
 }

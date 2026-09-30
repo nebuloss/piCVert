@@ -51,17 +51,6 @@ export function isConflict(error: unknown): boolean {
 }
 
 export class HttpClient {
-  /**
-   * The token travels in a HEADER, never in the query string.
-   *
-   * Query strings are written to proxy logs and kept in browser history, and
-   * this token is the only secret the service has. The address bar already
-   * carries it — that cannot be helped, it IS the link — but nothing else has
-   * to, and a request logged by an intermediary should not be a request that
-   * hands over the CV.
-   */
-  constructor(private readonly token = '') {}
-
   get<T>(path: string): Promise<T> {
     return this.send<T>('GET', path);
   }
@@ -120,7 +109,6 @@ export class HttpClient {
       { body?: unknown; type?: string; revision?: string; window?: string },
   ): Promise<Tagged<T>> {
     const headers: Record<string, string> = {};
-    if (this.token) headers['X-CV-Token'] = this.token;
     // The revision this client believes it is editing. The server refuses the
     // write if the document has moved since — see store.WriteIfUnchanged.
     if (revision) headers['If-Match'] = `"${revision}"`;

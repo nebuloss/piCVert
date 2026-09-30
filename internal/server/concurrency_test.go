@@ -56,7 +56,7 @@ func TestConcurrentPreviewsAreSafe(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	doc, err := s.Store.Read(slug, "")
 	if err != nil {
@@ -76,7 +76,7 @@ func TestConcurrentPreviewsAreSafe(t *testing.T) {
 			for k, v := range doc {
 				mine[k] = v
 			}
-			w := call(t, h, "POST", "/api/p/"+slug+"/preview", mine, auth)
+			w := call(t, h, "POST", on(edit, "/api/preview"), mine, nil)
 			if w.Code != http.StatusOK {
 				failures.Add(1)
 			}
@@ -98,15 +98,15 @@ func TestConcurrentWritesDoNotCorrupt(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			call(t, h, "PATCH", "/api/p/"+slug+"/identity",
-				map[string]any{"name": fmt.Sprintf("Writer %d", n)}, auth)
+			call(t, h, "PATCH", on(edit, "/api/identity"),
+				map[string]any{"name": fmt.Sprintf("Writer %d", n)}, nil)
 		}(i)
 	}
 	wg.Wait()
@@ -156,7 +156,7 @@ func TestRenderingReportsItsParallelism(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 	doc, err := s.Store.Read(slug, "")
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestRenderingReportsItsParallelism(t *testing.T) {
 
 	const n = 12
 	one := time.Now()
-	call(t, h, "POST", "/api/p/"+slug+"/preview", doc, auth)
+	call(t, h, "POST", on(edit, "/api/preview"), doc, nil)
 	single := time.Since(one)
 
 	start := time.Now()
@@ -173,7 +173,7 @@ func TestRenderingReportsItsParallelism(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			call(t, h, "POST", "/api/p/"+slug+"/preview", doc, auth)
+			call(t, h, "POST", on(edit, "/api/preview"), doc, nil)
 		}()
 	}
 	wg.Wait()

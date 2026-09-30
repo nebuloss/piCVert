@@ -60,8 +60,8 @@ class Editor {
     this.state = need(root, '#state');
     this.links = [...root.querySelectorAll<HTMLAnchorElement>('#bar a.button')];
 
-    const { base = '', slug = '', token = '' } = root.body.dataset;
-    this.api = new Api({ slug, token, base });
+    const { base = '', slug = '' } = root.body.dataset;
+    this.api = new Api({ slug, base });
     this.lang = new URLSearchParams(location.search).get('lang') ?? '';
 
     this.report = new FitReport(need(root, '#fit'));

@@ -26,7 +26,7 @@ func TestWhatASaveCosts(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	doc, err := s.Store.Read(slug, "")
 	if err != nil {
@@ -35,12 +35,12 @@ func TestWhatASaveCosts(t *testing.T) {
 
 	// Warm: the first layout of a template parses its fonts, which is not what
 	// a keystroke pays.
-	call(t, h, "POST", "/api/p/"+slug+"/preview", doc, auth)
+	call(t, h, "POST", on(edit, "/api/preview"), doc, nil)
 
 	const runs = 20
 	start := time.Now()
 	for i := 0; i < runs; i++ {
-		w := call(t, h, "PUT", "/api/p/"+slug, doc, auth)
+		w := call(t, h, "PUT", on(edit, "/api/cv"), doc, nil)
 		if w.Code != http.StatusOK {
 			t.Fatalf("save: %d %s", w.Code, w.Body.String())
 		}
@@ -49,7 +49,7 @@ func TestWhatASaveCosts(t *testing.T) {
 
 	start = time.Now()
 	for i := 0; i < runs; i++ {
-		w := call(t, h, "POST", "/api/p/"+slug+"/preview", doc, auth)
+		w := call(t, h, "POST", on(edit, "/api/preview"), doc, nil)
 		if w.Code != http.StatusOK {
 			t.Fatalf("preview: %d", w.Code)
 		}
@@ -87,7 +87,7 @@ func TestTheNumbersOnTheAdminPageMove(t *testing.T) {
 	s, slug := service(t)
 	h := s.Handler()
 	links, _ := s.Tokens.ForProfile(slug)
-	auth := map[string]string{"X-CV-Token": links.Edit}
+	edit := links.Edit
 
 	before := s.Metrics.Snapshot()
 
@@ -96,14 +96,14 @@ func TestTheNumbersOnTheAdminPageMove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := call(t, h, "PUT", "/api/p/"+slug, doc, auth); w.Code != http.StatusOK {
+	if w := call(t, h, "PUT", on(edit, "/api/cv"), doc, nil); w.Code != http.StatusOK {
 		t.Fatalf("the save failed: %d %s", w.Code, w.Body.String())
 	}
 
 	// A save that cannot succeed: a name that is not text.
 	bad := map[string]any{"content": map[string]any{
 		"identity": map[string]any{"name": 123}, "sections": []any{}}}
-	if w := call(t, h, "PUT", "/api/p/"+slug, bad, auth); w.Code == http.StatusOK {
+	if w := call(t, h, "PUT", on(edit, "/api/cv"), bad, nil); w.Code == http.StatusOK {
 		t.Fatal("an invalid document was accepted")
 	}
 

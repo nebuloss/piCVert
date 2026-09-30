@@ -138,7 +138,7 @@ func TestTheIconIsServedBeforeSigningIn(t *testing.T) {
 func TestTheRestOfTheAdminInterfaceStaysShut(t *testing.T) {
 	_, admin := guarded(t)
 
-	shut := []string{"/api/profiles", "/api/metrics", "/api/trash", "/view/jean/cv.html"}
+	shut := []string{"/api/profiles", "/api/metrics", "/api/trash"}
 	for _, path := range shut {
 		if w := call(t, admin, "GET", path, nil, nil); w.Code != http.StatusUnauthorized {
 			t.Fatalf("%s answered %d without a session, not 401", path, w.Code)
