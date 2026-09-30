@@ -40,6 +40,8 @@ verified on a build host over SSH.
 - **`internal/pdf`** — the PDF painter, written by hand. Composite fonts with
   `ToUnicode` maps, subset and embedded; images with soft masks; gradients as
   banded fills; the source `cv.json` attached the way Factur-X carries its XML.
+  Every SVG path command an icon can use, arcs and quadratics included, since
+  PDF has an operator for neither and both become cubics.
 - **`internal/theme`** — a template's palette, named styles and composition, all
   as data. `repeat`, `when`, `{field}`, `styleBy`, `widthFrom`, and nothing else.
 - **`internal/templates`** — discovery, validation, and the conformance kit.
@@ -70,11 +72,6 @@ changes: the waiting one polls, and nothing is pushed.
 monitoring stack at and nothing pages anybody. The numbers are counted and
 shown where the administrator already is, which is the right answer for one
 machine and the wrong one for a fleet.
-
-**Arcs in SVG icon paths.** The translator handles move, line, cubic and close —
-what a material icon is made of. An icon set using `A` would draw nothing rather
-than something wrong; the conformance kit would not catch it, because it checks
-that icons are *declared*, not that every path command is understood.
 
 **SVG images.** A PDF cannot carry one wholesale, so a profile whose photo is an
 SVG — the shipped example's is — gets a PDF with no portrait. PNG and JPEG work.
@@ -176,8 +173,6 @@ Recorded because each cost real time and none is obvious from the code.
    debugging protocol — typing, saving, deleting, two windows at once — and
    those probes are not in the repository. The types catch shape errors;
    nothing yet catches a behavioural one automatically.
-3. **Arc support** in the SVG path translator, so an icon set outside the
-   material family renders.
-4. **Metrics somewhere other than the admin page**, if this ever runs where
+3. **Metrics somewhere other than the admin page**, if this ever runs where
    something scrapes them. The counters are already kept apart from the
    handlers for that reason; only the output format would change.
