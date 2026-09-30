@@ -172,6 +172,13 @@ func (f *Fonts) face(family string, weight Weight, italic bool) *face {
 	}
 	// Nearest weight in the same family. Ties go to the heavier face above 500
 	// and the lighter below, which is the rule a browser follows.
+	//
+	// POSTURE OUTRANKS WEIGHT, exactly as it does in the PDF painter's own
+	// search. Ranking on weight alone let a request for an upright face land
+	// on the italic — the only face at that weight — while the painter, which
+	// penalises a wrong posture, drew the run upright. The same text was then
+	// measured 3 % narrower than it was drawn, and whatever followed it on the
+	// line was placed on top of it.
 	best, bestDist, bestWeight := (*face)(nil), 1<<30, 0
 	for _, k := range f.keys() {
 		parts := strings.SplitN(k, "|", 3)
@@ -181,6 +188,9 @@ func (f *Fonts) face(family string, weight Weight, italic bool) *face {
 		var w int
 		fmt.Sscanf(parts[1], "%d", &w)
 		d := abs(w - int(weight))
+		if (parts[2] == "italic") != italic {
+			d += 1000
+		}
 		better := d < bestDist
 		if d == bestDist && best != nil {
 			if weight > 500 {

@@ -273,9 +273,16 @@ func (s Style) LineHeightOr() float64 {
 // Bold inside a paragraph is a heavier face of the SAME family, never a
 // different block — and a style already at bold or above stays where it is
 // rather than trying to go heavier than it shipped.
+//
+// ZERO IS NOT A WEIGHT here either, for the reason it is not one in CSS: a
+// style that declares no weight asks for the regular face, and asking for
+// weight 0 instead sent the measurement off to whichever face happened to sit
+// nearest to nothing — the italic, on a family that ships one. The text was
+// then drawn upright, 3 % wider than it had been measured, straight over the
+// run placed after it.
 func (s Style) WeightOf(bold bool) Weight {
 	if !bold {
-		return s.Weight
+		return s.Weight.OrRegular()
 	}
 	if s.BoldWeight != 0 {
 		return s.BoldWeight

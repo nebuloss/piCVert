@@ -257,9 +257,13 @@ func (e *Engine) HTML(p *Page) (string, error) {
 func (e *Engine) PDF(p *Page, sourceName string, source []byte) ([]byte, error) {
 	doc := pdf.New(p.Render.Width, p.Render.Height, p.Title(), p.Lang())
 
-	// The same faces the page embeds, from the same files the engine measured
-	// with. Measuring in one font and drawing in another is the fault this whole
-	// design exists to remove.
+	// The same faces the page embeds, and the same outlines the engine measured
+	// with: the subset the PDF carries comes from one subsetting pass over the
+	// file loadFonts reads, so every glyph advances by what it was measured to
+	// advance by. Measuring in one font and drawing in another is the fault
+	// this whole design exists to remove — and it is worth saying that the
+	// fault is a font, not a FILE: the same face chosen differently by the two
+	// sides costs exactly as much, and did.
 	for _, decl := range p.Template.FontDecls() {
 		for _, src := range decl.Sources {
 			// The subset where there is one, the whole face otherwise. The PDF

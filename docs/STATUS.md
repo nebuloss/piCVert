@@ -155,6 +155,15 @@ Recorded because each cost real time and none is obvious from the code.
   deliberately. The same CV then laid out to a different page from one run to
   the next — and the fit search, which lays a page out ten times, turned the
   wobble into visibly different spacing. Every fallback order is now fixed.
+- **Zero is not a font weight, and two searches for a face must rank the same
+  way.** A style declaring no weight asked for weight 0. The measurement's
+  nearest-weight search ranked an italic face exactly as close as an upright one
+  and took the italic; the painter, which penalises the wrong posture, drew the
+  run upright — 3 % wider than it had been measured, and the run after it was
+  placed at the measured width, on top of it. Posture now outranks weight in
+  both searches, and a style with no weight asks for the regular face by name.
+  Invisible to everything that read the PDF's text rather than its geometry, so
+  a test now replays the content stream and measures where the ink lands.
 - **Ask before inventing.** Two rounds were spent adding, then removing,
   ornament that was never in the design. Reading the original stylesheet — which
   should have come first — then turned up a dozen real differences in one pass.

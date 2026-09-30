@@ -227,3 +227,48 @@ func TestBoldRunsStayInTheSameParagraph(t *testing.T) {
 		t.Errorf("expected the bold run to remain its own piece, got %d pieces", len(lines[0].Pieces))
 	}
 }
+
+// A style that declares no weight is measured upright, in the regular face.
+//
+// It used to be measured in the ITALIC one: weight zero matched no face, and
+// the nearest-weight search ranked a 400 italic exactly as close as a 400
+// upright. The PDF painter penalises the wrong posture and so drew the same
+// text upright, 3 % wider than it had been measured — and placed the run after
+// it at the narrower width, on top of it.
+func TestUnweightedTextIsMeasuredUpright(t *testing.T) {
+	f := loadTestFonts(t)
+	const text = "Conception d'un nouveau "
+	unweighted := f.Width(text, "Roboto", 9.9, 0, false, 0)
+	regular := f.Width(text, "Roboto", 9.9, Regular, false, 0)
+	italic := f.Width(text, "Roboto", 9.9, Regular, true, 0)
+	if italic >= regular {
+		t.Fatalf("the italic face measures %.3f against the regular %.3f — "+
+			"this test can no longer tell them apart", italic, regular)
+	}
+	if unweighted != regular {
+		t.Errorf("measured %.3f with no weight, %.3f as regular (italic is %.3f)",
+			unweighted, regular, italic)
+	}
+}
+
+// A weight nobody shipped falls back within the same posture.
+//
+// Upright text asking for 600 must land on Bold or Medium, never on the italic
+// face that happens to sit closer in weight. Posture outranks weight, which is
+// the rule the PDF painter's own search follows — and the two searches
+// agreeing is what keeps a run drawn at the width it was measured at.
+func TestMissingWeightFallsBackWithinTheSamePosture(t *testing.T) {
+	f := loadTestFonts(t)
+	const text = "Développeur"
+	upright := f.Width(text, "Roboto", 12, Weight(600), false, 0)
+	italic := f.Width(text, "Roboto", 12, Weight(600), true, 0)
+	bold := f.Width(text, "Roboto", 12, Bold, false, 0)
+	medium := f.Width(text, "Roboto", 12, Medium, false, 0)
+	if upright != bold && upright != medium {
+		t.Errorf("600 upright measured %.3f, which is neither bold %.3f nor medium %.3f",
+			upright, bold, medium)
+	}
+	if italic == upright {
+		t.Errorf("600 italic measured %.3f, the same as upright — the italic face is not being used", italic)
+	}
+}
