@@ -62,7 +62,7 @@ fi
 
 # And under the race detector, which is where a shared buffer or an unguarded
 # map is caught rather than merely producing a wrong answer.
-go test -race ./internal/layout/ ./internal/lease/ > /dev/null 2>&1 \
+go test -race ./internal/layout/ ./internal/lease/ ./internal/store/ > /dev/null 2>&1 \
   && ok 'race detector' || bad 'race detector'
 
 echo "› interface"

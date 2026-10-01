@@ -183,7 +183,16 @@ Saving and drawing are separate, and run at different speeds on purpose:
 | | when | cost |
 |---|---|---|
 | save | every change, at once | 496 µs — validate and write JSON |
+| …and its journal | with the save | 219 µs on a CV at the entry cap |
 | draw | after a pause | ~200 ms — the whole layout engine |
+
+The journal is on that list because it was once the larger half of a save and
+nothing said so. It read and re-parsed the whole file on every write, then
+wrote it back indented: about 1.2 ms on a CV with a long history, against the
+496 µs the save beside it was advertised to cost — and all of it inside the one
+mutex every write in the service shares, so it was a ceiling on the service
+rather than a cost to one editor. What it keeps parsed between writes is the
+same bargain the page and font caches make.
 
 They were one thing, because a save reported the fit and **the fit is a
 layout**. That made a keystroke cost a full render (193 ms against a render's
@@ -192,6 +201,10 @@ everybody using it.
 
 Nothing is lost by drawing late: the document is already safe on disk, and what
 arrives a quarter of a second behind is only the picture of it.
+
+The ratio is what matters rather than either number: a save costs well under a
+hundredth of a render, so saving on every change and drawing on a pause remains
+the right way round even as both drift.
 
 The save has no timer at all. Coalescing comes from *serialising* — one save in
 flight, changes during it marked dirty, the next going out the moment it lands

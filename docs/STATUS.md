@@ -21,7 +21,7 @@ GOOS=… go build            six targets, all of them
 | Text in the PDF | selectable and searchable, 3 265 chars extracted against 3 279 |
 | Conformance kit | both templates, and it fails when a template is broken on purpose |
 | Mobile | scales to fit, no horizontal scroll, no dead space below the page |
-| A save | 496 µs; a full layout is 420× that, and a keystroke pays the former |
+| A save | 496 µs, plus 219 µs of journal on a CV at the entry cap; a full layout is hundreds of times either |
 | Concurrency | 12 layouts at once take 3.1× one, not 12× |
 | Memory | 40 CVs rendered to page and PDF: +18 MB, cache bounded at 48 MB |
 | Two editors | one holds a lease, the other is told; a stale save is refused |
@@ -161,6 +161,17 @@ Recorded because each cost real time and none is obvious from the code.
   both searches, and a style with no weight asks for the regular face by name.
   Invisible to everything that read the PDF's text rather than its geometry, so
   a test now replays the content stream and measures where the ink lands.
+- **A journal cost more than the thing it was a record of.** Every save read the
+  whole journal and parsed it again, then wrote it back indented — about 1.2 ms
+  on a CV at the entry cap, against the 496 µs the save itself was advertised to
+  cost, and all of it inside the single mutex every write shares. Nothing
+  noticed because the documented figure had been measured on an empty journal,
+  which is the state a CV is in for about a minute of its life. There is now a
+  benchmark, so the number is checkable rather than remembered.
+- **Trimming a shared file by its total length loses somebody else's half.** The
+  journal holds every language of a CV together and is read one language at a
+  time, so capping the file as a whole meant a busy afternoon on the French CV
+  silently deleted the English CV's entire history. The cap is per language now.
 - **Ask before inventing.** Two rounds were spent adding, then removing,
   ornament that was never in the design. Reading the original stylesheet — which
   should have come first — then turned up a dozen real differences in one pass.

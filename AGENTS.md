@@ -242,6 +242,35 @@ first, 423 a browser holds the lease, 507 out of quota.
 - `data/`, `*.html`/`*.pdf`/`*.png` artefacts and `picvert.yaml` are gitignored;
   `internal/server/web/*.html` is explicitly un-ignored because it is source.
 
+## The journal
+
+`internal/store/history.go`. One entry per *episode* of editing, not per save —
+the editor saves on every keystroke, so a paragraph rewritten over two minutes
+is one entry whose `Before` is where the episode started. A field typed into and
+put back leaves nothing at all.
+
+Four rules that each cost something to learn, and all of which have tests:
+
+- **A path is a position, not an identity.** Inserting shifts everything after
+  it, so Add/Remove/Move never extend an episode — otherwise one entry claims a
+  list item turned into its neighbour.
+- **It cannot restore, by design** (`history.go:93`): `Before`/`After` are what
+  will be *shown*, clipped at 500 chars, and structured values are reduced to a
+  one-line digest. Rolling back is a backup or the `.bak` beside `cv.json`.
+- **It must never fail a save.** Recorded after the write, errors logged only.
+- **The log is kept in order of last change**, and the episode search relies on
+  it to stop early. `TestTheLogStaysInOrder` guards that.
+
+The parsed journal is cached in memory, keyed on the file's mtime and size, the
+same way `pageCache` and `Engine.faces` work. Two consequences: anything
+replacing the file externally (a restore) is picked up because mtime changes,
+and a journalled number may be Go `int` or `float64` depending on whether the
+read hit the cache — so read them as numbers, never by type assertion. They are
+display values bound for JSON, where there is one number type.
+
+Cost is checkable rather than remembered:
+`go test ./internal/store/ -run XXX -bench Record`.
+
 ## Testing
 
 Plain `func TestX(t *testing.T)` throughout (~190 tests), a few using `t.Run`
@@ -257,6 +286,8 @@ subtests; no external test framework. Tests that matter and are easy to miss:
   advances without `--font-render-hinting=none`).
 - `internal/pdf/painter_test.go` — replays the content stream and measures where
   ink actually lands, not what the text extracts as.
+- `internal/store/history_test.go` — the journal's rules, which are decisions
+  about what a person should read back and cannot be checked over HTTP.
 - `internal/server/{concurrency,memory,cost,lease,conflict}_test.go` — the
   service's performance and correctness claims; these are the ones that fail on
   a contended CI core.

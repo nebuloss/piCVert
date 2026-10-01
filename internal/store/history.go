@@ -2,12 +2,12 @@ package store
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"picvert/internal/diff"
@@ -55,6 +55,23 @@ type History struct {
 	// would make the journal depend on import order.
 	EpisodeOf    func() time.Duration
 	MaxEntriesOf func() int
+
+	// parsed holds each journal as last read, so a save does not re-read and
+	// re-parse one. See the cache comment on load.
+	mu     sync.Mutex
+	parsed map[string]snapshot
+}
+
+// snapshot is a journal as it was last seen on disk.
+//
+// Validated by modification time AND size, the same way the page cache
+// validates a rendering against its document: either changing means somebody
+// else wrote the file — a restore from a backup, or a hand edit — and what is
+// held is stale.
+type snapshot struct {
+	at   time.Time
+	size int64
+	log  []Entry
 }
 
 // NewHistory builds the journal of a running service.
@@ -111,20 +128,91 @@ func (h *History) fileFor(p *profiles.Profile) string { return filepath.Join(p.D
 // load never fails. There may be no journal yet, or one damaged by a
 // half-written disk; either way the CV is what matters and it is elsewhere, so
 // a fresh log is started rather than a save failed over its history.
+//
+// # WHY THE PARSED JOURNAL IS KEPT
+//
+// Every save read the whole file and parsed it again. On a CV at the default
+// cap that is a hundred and sixty kilobytes of JSON, and parsing it measured
+// at about a millisecond — twice what the save it was attached to was
+// advertised to cost, and all of it inside the one mutex every write in the
+// service shares. The journal of the work was more expensive than the work.
+//
+// So what was last read is kept, keyed by the file and checked against its
+// modification time and size. Same bargain as the page cache and the font
+// cache: cheap to hold, and the thing that invalidates it is the thing that
+// changed.
+//
+// The caller gets a COPY, because absorb rewrites the slice in place — without
+// one, extending an episode would reach into what is being held and leave the
+// cache describing a journal that was never written.
 func (h *History) load(p *profiles.Profile) []Entry {
-	raw, err := os.ReadFile(h.fileFor(p))
+	file := h.fileFor(p)
+	info, err := os.Stat(file)
+	if err != nil {
+		return nil
+	}
+
+	h.mu.Lock()
+	hit, ok := h.parsed[file]
+	h.mu.Unlock()
+	if ok && hit.at.Equal(info.ModTime()) && hit.size == info.Size() {
+		return append([]Entry(nil), hit.log...)
+	}
+
+	raw, err := os.ReadFile(file)
 	if err != nil {
 		return nil
 	}
 	var log []Entry
 	if json.Unmarshal(raw, &log) != nil {
+		h.setAside(p, raw)
 		return nil
 	}
-	return log
+	h.remember(file, info.ModTime(), info.Size(), log)
+	return append([]Entry(nil), log...)
 }
 
+func (h *History) remember(file string, at time.Time, size int64, log []Entry) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.parsed == nil {
+		h.parsed = map[string]snapshot{}
+	}
+	h.parsed[file] = snapshot{at: at, size: size, log: append([]Entry(nil), log...)}
+}
+
+// setAside keeps a journal that could not be read.
+//
+// Starting a fresh log is right — a save must not fail over its own history —
+// but the old file is about to be overwritten by the next one, and discarding
+// somebody's record without trace is not a decision to make on their behalf.
+// Renamed rather than copied, so a file that is damaged because the disk is
+// full does not need more of it.
+//
+// One ".bad" per profile, deliberately: it is the ORIGINAL that is worth
+// keeping, and a sequence of them would be a directory filling up with
+// successive failures to read the same broken file.
+func (h *History) setAside(p *profiles.Profile, raw []byte) {
+	kept := h.fileFor(p) + ".bad"
+	if _, err := os.Stat(kept); err == nil {
+		return
+	}
+	if os.Rename(h.fileFor(p), kept) == nil {
+		return
+	}
+	// A rename across a mount, or a directory that will not have it. The
+	// contents are already in hand, so write them out instead.
+	_ = os.WriteFile(kept, raw, 0o600)
+}
+
+// save replaces the journal, and records what was written.
+//
+// COMPACT, not indented. Nothing reads this by eye — the editor draws it as a
+// panel and `picvert` never prints it — and the indentation was a fifth of the
+// file and four fifths of the time spent writing it. A journal is not a
+// configuration file.
 func (h *History) save(p *profiles.Profile, log []Entry) error {
-	raw, err := json.MarshalIndent(log, "", " ")
+	raw, err := json.Marshal(log)
 	if err != nil {
 		return err
 	}
@@ -133,7 +221,16 @@ func (h *History) save(p *profiles.Profile, log []Entry) error {
 	if err := os.WriteFile(tmp, append(raw, '\n'), 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, file)
+	if err := os.Rename(tmp, file); err != nil {
+		return err
+	}
+	// Remembered from the file rather than from the clock: what the cache is
+	// checked against is what the filesystem recorded, and the two need not
+	// agree to the nanosecond.
+	if info, err := os.Stat(file); err == nil {
+		h.remember(file, info.ModTime(), info.Size(), log)
+	}
+	return nil
 }
 
 // Record journals what separates two versions of a document.
@@ -195,10 +292,39 @@ func (h *History) Record(p *profiles.Profile, before, after document.Doc, lang s
 		}
 	}
 
-	if maxEntries := h.MaxEntriesOf(); maxEntries > 0 && len(log) > maxEntries {
-		log = log[len(log)-maxEntries:]
+	return h.save(p, trim(log, h.MaxEntriesOf()))
+}
+
+// trim keeps the newest entries, PER LANGUAGE.
+//
+// The journal holds every language of a CV in one file, and a reader asks for
+// one language at a time. Trimming the file as a whole meant a busy afternoon
+// on the French CV silently deleted the English one's entire history — a CV
+// losing a record it had no part in creating, which is the kind of data loss
+// nobody thinks to look for because nothing went wrong.
+//
+// The surviving entries stay in their original order, because that order is
+// what List reads back to front and what absorb maintains.
+func trim(log []Entry, max int) []Entry {
+	if max <= 0 || len(log) <= max {
+		return log
 	}
-	return h.save(p, log)
+	// Counted from the end, so what is counted first is what is kept.
+	seen := map[string]int{}
+	keep := make([]bool, len(log))
+	for i := len(log) - 1; i >= 0; i-- {
+		if seen[log[i].Lang] < max {
+			seen[log[i].Lang]++
+			keep[i] = true
+		}
+	}
+	out := make([]Entry, 0, len(log))
+	for i, e := range log {
+		if keep[i] {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // List is the journal, most recent first.
@@ -243,8 +369,18 @@ func episodeOf(log []Entry, entry Entry, now time.Time, window time.Duration) in
 	for i := len(log) - 1; i >= 0; i-- {
 		e := log[i]
 		at, err := time.Parse(time.RFC3339Nano, e.At)
-		if err != nil || now.Sub(at) > window {
+		if err != nil {
+			// A timestamp nothing here wrote. Skipped rather than trusted, and
+			// the scan carries on: one unreadable entry is not a reason to stop
+			// looking for the episode this change belongs to.
 			continue
+		}
+		// THE LOG IS IN ORDER, so the first entry too old to extend means every
+		// entry before it is older still. Walking the rest would parse five
+		// hundred timestamps to examine the three inside the window — which is
+		// what it used to do, on every keystroke.
+		if now.Sub(at) > window {
+			break
 		}
 		if e.Lang != entry.Lang {
 			continue
@@ -593,5 +729,3 @@ func capture(v any) any {
 	}
 	return s
 }
-
-var _ = fmt.Sprintf
