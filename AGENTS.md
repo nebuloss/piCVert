@@ -176,14 +176,28 @@ Four things that are not obvious:
 - **No lease is needed.** `requireLease` lets a caller presenting no holder
   through on purpose (`internal/server/lease.go:225`), so scripts work. Safety
   comes from the revision instead.
-- **Send the ETag back as `If-Match`.** Omit it and your write always wins;
-  send it and a stale write gets **409** rather than clobbering a live editor.
+- **`If-Match` is honoured by `PUT /api/cv` and by nothing else.** Only the
+  whole-document write can carry stale data — every other field it is not
+  changing — so only it checks the revision, answering **409** rather than
+  reverting whatever moved. The `PATCH` routes read, change one field and write
+  back under the service's write lock, so they carry no stale data by
+  construction and ignore `If-Match` **silently**: sending one does not protect
+  them and does not error either. Verified against the running service.
+  Practical rule: **prefer `PATCH` for field edits**, and keep `PUT` for
+  wholesale replacement, where the revision matters.
 - **A save does not lay the page out.** `PUT` tells you nothing about whether
   the CV still fits — that was a 400x cost per keystroke. Ask `/api/fit`
   afterwards, or test the change with `/api/preview` before saving it.
 
 Status codes carry meaning: 400 the document is wrong, 409 someone got there
-first, 423 a browser holds the lease, 507 out of quota.
+first, 423 a browser holds the lease, 507 out of quota. A 400 names the problem
+in its `error` — `content.identity: required section is missing` — so it is
+worth reading rather than retrying.
+
+**Discovering the shape.** `GET /api/templates` returns the field vocabulary,
+not just a list of themes: every section type the template accepts, the fields
+each is made of with their kinds and limits, plus `identity` and `meta`. An
+agent can learn what a CV may contain without reading any Go.
 
 ## Conventions and gotchas
 
